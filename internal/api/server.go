@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -32,6 +33,7 @@ import (
 	"github.com/yourorg/surveillance-system/internal/database"
 	"github.com/yourorg/surveillance-system/internal/models"
 	"github.com/yourorg/surveillance-system/internal/storage"
+	embedui "github.com/yourorg/surveillance-system"
 	"github.com/yourorg/surveillance-system/pkg/webdav"
 )
 
@@ -82,14 +84,28 @@ func (s *Server) setupRoutes() {
 	r.Use(s.loggerMiddleware())
 	r.Use(s.corsMiddleware())
 
-	// 静态文件（前端构建产物）
-	r.Static("/static", "./web/dist/static")
-	// index.html 禁止缓存，确保前端发版后立即生效
-	r.GET("/", func(c *gin.Context) {
-		c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
-		c.File("./web/dist/index.html")
-	})
-	r.StaticFile("/favicon.ico", "./web/dist/favicon.ico")
+	// 静态文件（前端构建产物，已通过 go:embed 嵌入单二进制）
+	distFS, distErr := embedui.Dist()
+	if distErr != nil {
+		logrus.Warnf("加载内嵌前端资源失败（未执行前端构建？）: %v", distErr)
+	}
+	if distErr == nil {
+		// /static 静态资源
+		staticFS, _ := fs.Sub(distFS, "static")
+		r.StaticFS("/static", http.FS(staticFS))
+		// index.html 禁止缓存，确保前端发版后立即生效
+		indexData, _ := fs.ReadFile(distFS, "index.html")
+		r.GET("/", func(c *gin.Context) {
+			c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+			c.Data(http.StatusOK, "text/html; charset=utf-8", indexData)
+		})
+		// favicon
+		if faviconData, err := fs.ReadFile(distFS, "favicon.ico"); err == nil {
+			r.GET("/favicon.ico", func(c *gin.Context) {
+				c.Data(http.StatusOK, "image/x-icon", faviconData)
+			})
+		}
+	}
 
 	// 健康检查
 	r.GET("/health", s.healthCheck)
@@ -239,6 +255,11 @@ func (s *Server) setupRoutes() {
 			return
 		}
 		c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+		if distErr == nil {
+			data, _ := fs.ReadFile(distFS, "index.html")
+			c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+			return
+		}
 		c.File("./web/dist/index.html")
 	})
 

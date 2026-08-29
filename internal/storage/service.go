@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/yourorg/surveillance-system/internal/config"
@@ -496,12 +495,15 @@ func (m *Manager) updateStats() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 磁盘空间
-	var stat syscall.Statfs_t
-	syscall.Statfs(m.local().RootPath, &stat)
-	m.stats.TotalSpace = int64(stat.Blocks) * int64(stat.Bsize)
-	m.stats.FreeSpace = int64(stat.Bavail) * int64(stat.Bsize)
-	m.stats.UsedSpace = m.stats.TotalSpace - m.stats.FreeSpace
+	// 磁盘空间（跨平台：unix 用 Statfs，windows 用 GetDiskFreeSpaceEx）
+	total, free, err := diskUsage(m.local().RootPath)
+	if err != nil {
+		logrus.Warnf("获取磁盘空间失败: %v", err)
+	} else {
+		m.stats.TotalSpace = int64(total)
+		m.stats.FreeSpace = int64(free)
+		m.stats.UsedSpace = m.stats.TotalSpace - m.stats.FreeSpace
+	}
 
 	// 录像统计
 	var recordings []models.Recording

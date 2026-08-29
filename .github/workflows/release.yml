@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write # 允许创建 Release 并上传产物
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}${{ matrix.goarm }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux,   goarch: amd64, ext: tar.gz }
+          - { goos: linux,   goarch: 386,   ext: tar.gz }
+          - { goos: linux,   goarch: arm,   goarm: "7", ext: tar.gz }
+          - { goos: linux,   goarch: arm64, ext: tar.gz }
+          - { goos: windows, goarch: amd64, ext: zip }
+          - { goos: windows, goarch: 386,   ext: zip }
+          - { goos: windows, goarch: arm64, ext: zip }
+          - { goos: darwin,  goarch: amd64, ext: tar.gz }
+          - { goos: darwin,  goarch: arm64, ext: tar.gz }
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build backend (embed frontend, pure static)
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          GOVERSION: ${{ github.ref_name }}
+        run: |
+          VERSION="${GOVERSION#v}"
+          BIN="surveillance-server"
+          if [ "$GOOS" = "windows" ]; then BIN="surveillance-server.exe"; fi
+          go build \
+            -trimpath \
+            -ldflags "-s -w -X main.Version=${VERSION}" \
+            -o "${BIN}" \
+            ./cmd/server
+
+          # 打包产物（含可执行文件 + 示例配置 + README）
+          NAME="surveillance-system-${VERSION}-${GOOS}-${GOARCH}${GOARM:+-armv${GOARM}}"
+          STAGE="${NAME}"
+          mkdir -p "${STAGE}"
+          cp "${BIN}" "${STAGE}/"
+          cp configs/config.yaml "${STAGE}/config.example.yaml"
+          cp README.md "${STAGE}/" 2>/dev/null || true
+
+          if [ "${{ matrix.ext }}" = "zip" ]; then
+            zip -r "${NAME}.zip" "${STAGE}"
+            echo "ARTIFACT=${NAME}.zip" >> "$GITHUB_ENV"
+          else
+            tar czf "${NAME}.tar.gz" "${STAGE}"
+            echo "ARTIFACT=${NAME}.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: surveillance-system-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}
+          path: ${{ env.ARTIFACT }}
+          if-no-files-found: error
+
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Release ${{ github.ref_name }}"
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          generate_release_notes: true
+          files: dist/*

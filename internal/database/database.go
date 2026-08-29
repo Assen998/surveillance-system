@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite" // 纯 Go SQLite 驱动（零 CGO，支持全平台交叉编译）
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 

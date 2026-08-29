@@ -1,0 +1,87 @@
+# 监控录像系统 - .gitignore
+
+# 编译产物（根目录下的二进制）
+/surveillance-server
+/server
+/bin/
+*.exe
+*.test
+*.out
+/build/
+/dist/
+
+# 依赖目录
+vendor/
+node_modules/
+web/node_modules/
+web/dist/
+
+# IDE/编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 环境配置
+.env
+.env.local
+.env.*.local
+configs/config.local.yaml
+
+# 数据/产物目录（仅根目录，避免误伤源码包）
+/data/
+/recordings/
+/logs/
+/models/
+/backups/
+/tmp/
+/temp/
+deployments/ssl/*.pem
+deployments/ssl/*.key
+
+# 数据库
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# 测试覆盖率
+coverage.out
+coverage.html
+
+# 构建缓存
+.go-build/
+.tmp/
+
+# 临时文件
+*.tmp
+*.temp
+
+# 日志
+*.log
+
+# 操作系统
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# 证书/密钥
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Docker
+.docker/
+
+# Terraform
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# 开发工具
+.direnv/
+.local/

@@ -1,0 +1,166 @@
+version: '3.8'
+
+services:
+  # 主应用服务
+  surveillance:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+    container_name: surveillance-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # HTTP API
+      - "8081:8081"   # WebSocket
+      - "9090:9090"   # gRPC (预留)
+    volumes:
+      - ../configs:/app/configs:ro
+      - surveillance-data:/app/data
+      - surveillance-recordings:/app/recordings
+      - surveillance-logs:/app/logs
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - SURVEILLANCE_SERVER_MODE=release
+      - SURVEILLANCE_DATABASE_TYPE=sqlite
+      - SURVEILLANCE_STORAGE_LOCAL_ROOT_PATH=/app/recordings
+      - SURVEILLANCE_LOGGING_OUTPUT=/app/logs/surveillance.log
+      - TZ=Asia/Shanghai
+    depends_on:
+      - redis
+    networks:
+      - surveillance-net
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Redis 缓存/消息队列
+  redis:
+    image: redis:7-alpine
+    container_name: surveillance-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - surveillance-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # MinIO 对象存储 (可选，用于云存储)
+  minio:
+    image: minio/minio:latest
+    container_name: surveillance-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Console
+    volumes:
+      - minio-data:/data
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin123
+    command: server /data --console-address ":9001"
+    networks:
+      - surveillance-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL (可选，替代 SQLite)
+  postgres:
+    image: postgres:16-alpine
+    container_name: surveillance-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    environment:
+      - POSTGRES_USER=surveillance
+      - POSTGRES_PASSWORD=surveillance123
+      - POSTGRES_DB=surveillance
+    networks:
+      - surveillance-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U surveillance -d surveillance"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Nginx 反向代理 (可选，生产环境推荐)
+  nginx:
+    image: nginx:alpine
+    container_name: surveillance-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - surveillance
+    networks:
+      - surveillance-net
+
+  # Prometheus 监控 (可选)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: surveillance-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - surveillance-net
+
+  # Grafana 可视化 (可选)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: surveillance-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    depends_on:
+      - prometheus
+    networks:
+      - surveillance-net
+
+volumes:
+  surveillance-data:
+  surveillance-recordings:
+  surveillance-logs:
+  redis-data:
+  minio-data:
+  postgres-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  surveillance-net:
+    driver: bridge

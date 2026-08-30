@@ -7,7 +7,7 @@ import (
 	"io/fs"
 )
 
-//go:embed web/dist
+//go:embed all:web/dist
 var dist embed.FS
 
 // Dist 返回以 web/dist 为根的文件系统，用于静态资源与 SPA 回退。

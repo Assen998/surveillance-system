@@ -1840,15 +1840,35 @@ func (s *Server) updateAlertConfig(c *gin.Context) {
 }
 
 func (s *Server) sendTestAlert(c *gin.Context) {
+	// 前端可附带当前表单的渠道配置（webhook/email/sms），测试即按表单值发送，
+	// 无需先保存（先测试后保存）；未附带时用当前生效配置。
 	var req struct {
 		Channel string `json:"channel" binding:"required"`
+		Webhook *config.WebhookAlertConfig `json:"webhook"`
+		Email   *config.EmailAlertConfig   `json:"email"`
+		SMS     *config.SMSAlertConfig     `json:"sms"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	if err := s.alertMgr.SendTestAlert(req.Channel); err != nil {
+	var override *config.AlertConfig
+	if req.Webhook != nil || req.Email != nil || req.SMS != nil {
+		base := s.cfg.Alert // 值拷贝，测试不改动生效配置
+		if req.Webhook != nil {
+			base.Channels.Webhook = *req.Webhook
+		}
+		if req.Email != nil {
+			base.Channels.Email = *req.Email
+		}
+		if req.SMS != nil {
+			base.Channels.SMS = *req.SMS
+		}
+		override = &base
+	}
+
+	if err := s.alertMgr.SendTestAlert(req.Channel, override); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

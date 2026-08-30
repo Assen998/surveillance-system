@@ -110,7 +110,7 @@ func (m *Manager) sendAlert(alert *models.Alert) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := m.sendWebhook(alert); err != nil {
+			if err := m.sendWebhook(alert, &m.cfg.Alert.Channels.Webhook); err != nil {
 				logrus.Errorf("Webhook 推送失败: %v", err)
 			}
 		}()
@@ -121,7 +121,7 @@ func (m *Manager) sendAlert(alert *models.Alert) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := m.sendEmail(alert); err != nil {
+			if err := m.sendEmail(alert, &m.cfg.Alert.Channels.Email); err != nil {
 				logrus.Errorf("邮件推送失败: %v", err)
 			}
 		}()
@@ -132,7 +132,7 @@ func (m *Manager) sendAlert(alert *models.Alert) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := m.sendSMS(alert); err != nil {
+			if err := m.sendSMS(alert, &m.cfg.Alert.Channels.SMS); err != nil {
 				logrus.Errorf("短信推送失败: %v", err)
 			}
 		}()
@@ -144,12 +144,15 @@ func (m *Manager) sendAlert(alert *models.Alert) {
 	// 实际应用中应更新数据库
 }
 
-func (m *Manager) sendWebhook(alert *models.Alert) error {
+func (m *Manager) sendWebhook(alert *models.Alert, wh *config.WebhookAlertConfig) error {
+	if wh.URL == "" {
+		return fmt.Errorf("Webhook URL 未配置")
+	}
 	var data []byte
 	var err error
 
 	// 按 webhook 类型选择 payload 格式
-	if strings.EqualFold(m.cfg.Alert.Channels.Webhook.Type, "gotify") {
+	if strings.EqualFold(wh.Type, "gotify") {
 		data, err = m.buildGotifyPayload(alert)
 	} else {
 		// generic（默认）：通用 JSON
@@ -166,7 +169,7 @@ func (m *Manager) sendWebhook(alert *models.Alert) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", m.cfg.Alert.Channels.Webhook.URL, bytes.NewBuffer(data))
+	req, err := http.NewRequestWithContext(ctx, "POST", wh.URL, bytes.NewBuffer(data))
 	if err != nil {
 		return err
 	}
@@ -237,8 +240,8 @@ func levelToGotifyPriority(level string) int {
 	}
 }
 
-func (m *Manager) sendEmail(alert *models.Alert) error {
-	cfg := m.cfg.Alert.Channels.Email
+func (m *Manager) sendEmail(alert *models.Alert, em *config.EmailAlertConfig) error {
+	cfg := em
 	if len(cfg.To) == 0 {
 		return fmt.Errorf("未配置收件人")
 	}
@@ -321,8 +324,8 @@ func (m *Manager) getSnapshotHTML(alert *models.Alert) string {
 	return ""
 }
 
-func (m *Manager) sendSMS(alert *models.Alert) error {
-	cfg := m.cfg.Alert.Channels.SMS
+func (m *Manager) sendSMS(alert *models.Alert, sm *config.SMSAlertConfig) error {
+	cfg := sm
 
 	// 这里需要根据具体短信服务商实现
 	// 阿里云、腾讯云等都有 Go SDK
@@ -337,7 +340,10 @@ func (m *Manager) sendSMS(alert *models.Alert) error {
 }
 
 // 手动发送测试报警
-func (m *Manager) SendTestAlert(channel string) error {
+// SendTestAlert 向指定渠道发送测试报警。
+// override 非 nil 时使用前端传入的渠道配置（当前表单值）进行测试，
+// 支持「先测试、后保存」；为 nil 时使用当前生效配置。
+func (m *Manager) SendTestAlert(channel string, override *config.AlertConfig) error {
 	testAlert := &models.Alert{
 		CameraID: 0,
 		Type:     "test",
@@ -346,13 +352,18 @@ func (m *Manager) SendTestAlert(channel string) error {
 		Details:  `{"test": true}`,
 	}
 
+	src := m.cfg.Alert
+	if override != nil {
+		src = *override
+	}
+
 	switch channel {
 	case "webhook":
-		return m.sendWebhook(testAlert)
+		return m.sendWebhook(testAlert, &src.Channels.Webhook)
 	case "email":
-		return m.sendEmail(testAlert)
+		return m.sendEmail(testAlert, &src.Channels.Email)
 	case "sms":
-		return m.sendSMS(testAlert)
+		return m.sendSMS(testAlert, &src.Channels.SMS)
 	default:
 		return fmt.Errorf("未知渠道: %s", channel)
 	}

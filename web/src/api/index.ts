@@ -161,7 +161,7 @@ export const api = {
   alerts: {
     config: () => request.get('/alerts/config'),
     updateConfig: (data: any) => request.put('/alerts/config', data),
-    test: (channel: string) => request.post('/alerts/test', { channel }),
+    test: (channel: string, data?: any) => request.post('/alerts/test', { channel, ...data }),
   },
 
   // 系统

@@ -140,11 +140,11 @@ const saveWebhook = async () => { try { await api.alerts.updateConfig({ channels
 const saveEmail = async () => { try { await api.alerts.updateConfig({ channels: { email: emailForm } }); ElMessage.success('保存成功') } catch(e) { ElMessage.error('保存失败') } }
 const saveSms = async () => { try { await api.alerts.updateConfig({ channels: { sms: smsForm } }); ElMessage.success('保存成功') } catch(e) { ElMessage.error('保存失败') } }
 
-const testWebhook = async () => { testLoading.webhook = true; try { await api.alerts.test('webhook'); ElMessage.success('测试消息已发送') } catch(e) { ElMessage.error('发送失败') } finally { testLoading.webhook = false } }
-const testEmail = async () => { testLoading.email = true; try { await api.alerts.test('email'); ElMessage.success('测试邮件已发送') } catch(e) { ElMessage.error('发送失败') } finally { testLoading.email = false } }
-const testSms = async () => { testLoading.sms = true; try { await api.alerts.test('sms'); ElMessage.success('测试短信已发送') } catch(e) { ElMessage.error('发送失败') } finally { testLoading.sms = false } }
+const testWebhook = async () => { testLoading.webhook = true; try { await api.alerts.test('webhook', { webhook: webhookForm }); ElMessage.success('测试消息已发送') } catch(e) { ElMessage.error('发送失败') } finally { testLoading.webhook = false } }
+const testEmail = async () => { testLoading.email = true; try { await api.alerts.test('email', { email: emailForm }); ElMessage.success('测试邮件已发送') } catch(e) { ElMessage.error('发送失败') } finally { testLoading.email = false } }
+const testSms = async () => { testLoading.sms = true; try { await api.alerts.test('sms', { sms: smsForm }); ElMessage.success('测试短信已发送') } catch(e) { ElMessage.error('发送失败') } finally { testLoading.sms = false } }
 
-const sendTestAlert = async (channel: string) => { testLoading[channel] = true; try { await api.alerts.test(channel); ElMessage.success(`${channel} 测试报警已发送`) } catch(e) { ElMessage.error('发送失败') } finally { testLoading[channel] = false } }
+const sendTestAlert = async (channel: string) => { const formMap: Record<string, any> = { webhook: webhookForm, email: emailForm, sms: smsForm }; testLoading[channel] = true; try { await api.alerts.test(channel, { [channel]: formMap[channel] }); ElMessage.success(`${channel} 测试报警已发送`) } catch(e) { ElMessage.error('发送失败') } finally { testLoading[channel] = false } }
 
 onMounted(() => loadConfig())
 </script>

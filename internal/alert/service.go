@@ -145,12 +145,20 @@ func (m *Manager) sendAlert(alert *models.Alert) {
 }
 
 func (m *Manager) sendWebhook(alert *models.Alert) error {
-	payload := WebhookPayload{
-		Alert:     alert,
-		Timestamp: time.Now().Format(time.RFC3339),
-	}
+	var data []byte
+	var err error
 
-	data, err := json.Marshal(payload)
+	// 按 webhook 类型选择 payload 格式
+	if strings.EqualFold(m.cfg.Alert.Channels.Webhook.Type, "gotify") {
+		data, err = m.buildGotifyPayload(alert)
+	} else {
+		// generic（默认）：通用 JSON
+		payload := WebhookPayload{
+			Alert:     alert,
+			Timestamp: time.Now().Format(time.RFC3339),
+		}
+		data, err = json.Marshal(payload)
+	}
 	if err != nil {
 		return err
 	}
@@ -178,6 +186,55 @@ func (m *Manager) sendWebhook(alert *models.Alert) error {
 	}
 
 	return nil
+}
+
+// gotifyMessage Gotify /message 接口请求体
+type gotifyMessage struct {
+	Title    string `json:"title,omitempty"`
+	Message  string `json:"message"`
+	Priority int    `json:"priority"`
+}
+
+// buildGotifyPayload 将报警转换为 Gotify /message 格式
+func (m *Manager) buildGotifyPayload(alert *models.Alert) ([]byte, error) {
+	title := m.templates[alert.Type]
+	if title == "" {
+		title = "🚨 监控报警"
+	}
+
+	// 消息正文：优先用报警自带 message，否则按类型 + 摄像头生成
+	msg := strings.TrimSpace(alert.Message)
+	if msg == "" {
+		msg = fmt.Sprintf("摄像头 %d 触发 %s 报警", alert.CameraID, alert.Type)
+	}
+	// 附带报警时间与详情，方便手机端直接查看
+	detail := fmt.Sprintf("\n时间：%s", time.Now().Format("2006-01-02 15:04:05"))
+	if alert.CameraID > 0 {
+		detail = fmt.Sprintf("\n摄像头 ID：%d%s", alert.CameraID, detail)
+	}
+
+	body := gotifyMessage{
+		Title:    title,
+		Message:  msg + detail,
+		Priority: levelToGotifyPriority(alert.Level),
+	}
+	return json.Marshal(body)
+}
+
+// levelToGotifyPriority 将报警等级映射到 Gotify 优先级（0~10）
+func levelToGotifyPriority(level string) int {
+	switch level {
+	case models.AlertLevelLow:
+		return 1
+	case models.AlertLevelMedium:
+		return 3
+	case models.AlertLevelHigh:
+		return 5
+	case models.AlertLevelCritical:
+		return 8
+	default:
+		return 3
+	}
 }
 
 func (m *Manager) sendEmail(alert *models.Alert) error {

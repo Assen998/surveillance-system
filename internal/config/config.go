@@ -127,38 +127,41 @@ type OnvifEventConfig struct {
 }
 
 type AlertConfig struct {
-	Enabled  bool            `mapstructure:"enabled" yaml:"enabled"`
-	Channels AlertChannels   `mapstructure:"channels" yaml:"channels"`
+	Enabled  bool          `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+	Channels AlertChannels `mapstructure:"channels" yaml:"channels" json:"channels"`
 }
 
 type AlertChannels struct {
-	Webhook WebhookAlertConfig `mapstructure:"webhook" yaml:"webhook"`
-	Email   EmailAlertConfig   `mapstructure:"email" yaml:"email"`
-	SMS     SMSAlertConfig     `mapstructure:"sms" yaml:"sms"`
+	Webhook WebhookAlertConfig `mapstructure:"webhook" yaml:"webhook" json:"webhook"`
+	Email   EmailAlertConfig   `mapstructure:"email" yaml:"email" json:"email"`
+	SMS     SMSAlertConfig     `mapstructure:"sms" yaml:"sms" json:"sms"`
 }
 
 type WebhookAlertConfig struct {
-	Enabled bool   `mapstructure:"enabled" yaml:"enabled"`
-	URL     string `mapstructure:"url" yaml:"url"`
+	Enabled bool   `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+	URL     string `mapstructure:"url" yaml:"url" json:"url"`
+	// Type 推送格式类型：generic（默认，通用 JSON）| gotify（Gotify /message 接口，
+	// URL 填形如 https://gotify.example.com/message?token=xxx）
+	Type string `mapstructure:"type" yaml:"type" json:"type"`
 }
 
 type EmailAlertConfig struct {
-	Enabled    bool     `mapstructure:"enabled" yaml:"enabled"`
-	SMTPHost   string   `mapstructure:"smtp_host" yaml:"smtp_host"`
-	SMTPPort   int      `mapstructure:"smtp_port" yaml:"smtp_port"`
-	Username   string   `mapstructure:"username" yaml:"username"`
-	Password   string   `mapstructure:"password" yaml:"password"`
-	From       string   `mapstructure:"from" yaml:"from"`
-	To         []string `mapstructure:"to" yaml:"to"`
+	Enabled    bool     `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+	SMTPHost   string   `mapstructure:"smtp_host" yaml:"smtp_host" json:"smtp_host"`
+	SMTPPort   int      `mapstructure:"smtp_port" yaml:"smtp_port" json:"smtp_port"`
+	Username   string   `mapstructure:"username" yaml:"username" json:"username"`
+	Password   string   `mapstructure:"password" yaml:"password" json:"password"`
+	From       string   `mapstructure:"from" yaml:"from" json:"from"`
+	To         []string `mapstructure:"to" yaml:"to" json:"to"`
 }
 
 type SMSAlertConfig struct {
-	Enabled       bool   `mapstructure:"enabled" yaml:"enabled"`
-	Provider      string `mapstructure:"provider" yaml:"provider"`
-	AccessKey     string `mapstructure:"access_key" yaml:"access_key"`
-	SecretKey     string `mapstructure:"secret_key" yaml:"secret_key"`
-	SignName      string `mapstructure:"sign_name" yaml:"sign_name"`
-	TemplateCode  string `mapstructure:"template_code" yaml:"template_code"`
+	Enabled       bool   `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+	Provider      string `mapstructure:"provider" yaml:"provider" json:"provider"`
+	AccessKey     string `mapstructure:"access_key" yaml:"access_key" json:"access_key"`
+	SecretKey     string `mapstructure:"secret_key" yaml:"secret_key" json:"secret_key"`
+	SignName      string `mapstructure:"sign_name" yaml:"sign_name" json:"sign_name"`
+	TemplateCode  string `mapstructure:"template_code" yaml:"template_code" json:"template_code"`
 }
 
 type GB28181Config struct {

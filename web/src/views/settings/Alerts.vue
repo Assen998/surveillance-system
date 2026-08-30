@@ -2,14 +2,25 @@
   <div class="settings-page">
     <el-card :shadow="never" class="mb-16">
       <template #header>
-        <h3>Webhook 配置 (钉钉/飞书/企业微信)</h3>
+        <h3>Webhook 配置 (钉钉/飞书/企业微信/Gotify)</h3>
       </template>
       <el-form :model="webhookForm" label-width="140">
         <el-form-item label="启用 Webhook">
           <el-switch v-model="webhookForm.enabled" />
         </el-form-item>
+        <el-form-item label="推送类型">
+          <el-select v-model="webhookForm.type" style="width: 240px">
+            <el-option label="通用 JSON（钉钉/飞书/企微等）" value="generic" />
+            <el-option label="Gotify" value="gotify" />
+          </el-select>
+          <span class="form-hint">Gotify 选此项后，URL 填 Gotify 的 /message?token=xxx 地址</span>
+        </el-form-item>
         <el-form-item label="Webhook URL">
-          <el-input v-model="webhookForm.url" placeholder="https://oapi.dingtalk.com/robot/send?access_token=xxx" style="width: 500px" />
+          <el-input
+            v-model="webhookForm.url"
+            :placeholder="webhookForm.type === 'gotify' ? 'https://gotify.example.com/message?token=xxx' : 'https://oapi.dingtalk.com/robot/send?access_token=xxx'"
+            style="width: 500px"
+          />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="testWebhook"><el-icon><Connection /></el-icon> 测试连接</el-button>
@@ -111,7 +122,7 @@ import { api } from '@/api'
 
 const testLoading = reactive({ webhook: false, email: false, sms: false })
 
-const webhookForm = reactive({ enabled: false, url: '' })
+const webhookForm = reactive({ enabled: false, url: '', type: 'generic' })
 const emailForm = reactive({ enabled: false, smtp_host: '', smtp_port: 587, username: '', password: '', from: '', to: <string[]>[] })
 const smsForm = reactive({ enabled: false, provider: 'aliyun', access_key: '', secret_key: '', sign_name: '', template_code: '' })
 
@@ -119,6 +130,7 @@ const loadConfig = async () => {
   try {
     const res = await api.alerts.config()
     Object.assign(webhookForm, res.channels?.webhook || {})
+    if (!webhookForm.type) webhookForm.type = 'generic'
     Object.assign(emailForm, res.channels?.email || {})
     Object.assign(smsForm, res.channels?.sms || {})
   } catch (e) { console.error(e) }

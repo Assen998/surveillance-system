@@ -1801,13 +1801,41 @@ func (s *Server) getAlertConfig(c *gin.Context) {
 }
 
 func (s *Server) updateAlertConfig(c *gin.Context) {
-	var cfg config.AlertConfig
-	if err := c.ShouldBindJSON(&cfg); err != nil {
+	// 按「哪个渠道有值就更新哪个」做合并，避免前端只提交单个渠道时
+	// 把 enabled / 其它渠道配置清零（指针用于区分「未提交」与「提交为 false」）。
+	var req struct {
+		Enabled  *bool `json:"enabled"`
+		Channels *struct {
+			Webhook *config.WebhookAlertConfig `json:"webhook"`
+			Email   *config.EmailAlertConfig   `json:"email"`
+			SMS     *config.SMSAlertConfig     `json:"sms"`
+		} `json:"channels"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	s.cfg.Alert = cfg
-	// TODO: 保存到文件
+
+	if req.Enabled != nil {
+		s.cfg.Alert.Enabled = *req.Enabled
+	}
+	if req.Channels != nil {
+		if req.Channels.Webhook != nil {
+			s.cfg.Alert.Channels.Webhook = *req.Channels.Webhook
+		}
+		if req.Channels.Email != nil {
+			s.cfg.Alert.Channels.Email = *req.Channels.Email
+		}
+		if req.Channels.SMS != nil {
+			s.cfg.Alert.Channels.SMS = *req.Channels.SMS
+		}
+	}
+
+	// 持久化到 config.yaml（重启不丢失）
+	if err := s.persistConfig(); err != nil {
+		logrus.Warnf("持久化报警配置失败: %v（本次修改仅在内存生效，重启后还原）", err)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "报警配置已更新"})
 }
 

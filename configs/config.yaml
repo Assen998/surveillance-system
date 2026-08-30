@@ -65,6 +65,7 @@ alert:
         webhook:
             enabled: true
             url: ""
+            type: generic        # generic=通用JSON(钉钉/飞书/企微等) | gotify=Gotify(/message?token=xxx)
         email:
             enabled: false
             smtp_host: smtp.example.com

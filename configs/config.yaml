@@ -43,6 +43,7 @@ storage:
         base_path: surveillance
         max_days: 30
         max_storage_gb: 150
+        only: false
 camera:
     discovery_timeout: 10
     stream_timeout: 30

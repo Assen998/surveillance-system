@@ -1433,7 +1433,9 @@ func (s *Server) downloadRecording(c *gin.Context) {
 	c.FileAttachment(full, filepath.Base(full))
 }
 
-// getRecordingFile 提供录像文件流（支持 Range，用于浏览器原生播放）
+// getRecordingFile 提供录像文件流（支持 Range，用于浏览器原生播放）。
+// 本地文件不存在时（如 WebDAV 独占模式上传后已删除本地副本），
+// 回退到 WebDAV 流式播放（透传 Range，可拖动进度）。
 func (s *Server) getRecordingFile(c *gin.Context) {
 	id := parseUint(c.Param("id"))
 	rec, err := storage.NewRecordingManager().GetRecordingByID(id)
@@ -1445,12 +1447,50 @@ func (s *Server) getRecordingFile(c *gin.Context) {
 	if !filepath.IsAbs(full) {
 		full = "./" + full
 	}
-	if _, err := os.Stat(full); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "录像文件不存在"})
+	if _, err := os.Stat(full); err == nil {
+		// 本地文件存在，直接服务
+		c.Header("Accept-Ranges", "bytes")
+		c.File(full)
 		return
 	}
-	c.Header("Accept-Ranges", "bytes")
-	c.File(full)
+
+	// 本地不存在 → 尝试 WebDAV 回退
+	if rec.StoragePath != "" {
+		if wd := s.currentWebdavSettings(); wd.Enabled && wd.URL != "" {
+			if err := validateWebdavRelPath(wd.BasePath, rec.StoragePath); err == nil {
+				client := webdav.NewClient(wd.URL, wd.Username, wd.Password)
+				resp, gerr := client.Get(c.Request.Context(), rec.StoragePath, c.GetHeader("Range"))
+				if gerr == nil {
+					defer resp.Body.Close()
+					if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPartialContent {
+						c.Status(resp.StatusCode)
+						if ct := resp.Header.Get("Content-Type"); ct != "" {
+							c.Header("Content-Type", ct)
+						} else {
+							c.Header("Content-Type", "video/mp4")
+						}
+						if cr := resp.Header.Get("Content-Range"); cr != "" {
+							c.Header("Content-Range", cr)
+						}
+						if cl := resp.Header.Get("Content-Length"); cl != "" {
+							c.Header("Content-Length", cl)
+						}
+						c.Header("Accept-Ranges", "bytes")
+						io.Copy(c.Writer, resp.Body)
+						return
+					}
+					if resp.StatusCode != http.StatusNotFound {
+						c.JSON(http.StatusBadGateway, gin.H{"error": "WebDAV 读取录像失败"})
+						return
+					}
+				} else {
+					logrus.Warnf("WebDAV 回退播放失败 id=%d: %v", id, gerr)
+				}
+			}
+		}
+	}
+
+	c.JSON(http.StatusNotFound, gin.H{"error": "录像文件不存在"})
 }
 
 func (s *Server) deleteRecording(c *gin.Context) {

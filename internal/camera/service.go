@@ -673,6 +673,15 @@ func (m *CameraManager) uploadSegmentToWebdav(recordingID uint, cameraID uint, l
 		m.db.Model(&models.Recording{}).Where("id = ?", recordingID).
 			Update("storage_path", remotePath)
 		logrus.Infof("WebDAV 上传成功: camera=%d -> %s", cameraID, remotePath)
+
+		// WebDAV 独占模式：上传成功后删除本地副本，本地仅作临时缓冲
+		if wd.Only {
+			if err := os.Remove(localPath); err == nil {
+				logrus.Infof("WebDAV 独占模式: 已删除本地副本 %s", localPath)
+			} else if !os.IsNotExist(err) {
+				logrus.Warnf("WebDAV 独占模式: 删除本地副本失败 %s: %v", localPath, err)
+			}
+		}
 		return
 	}
 	logrus.Errorf("WebDAV 上传失败（已重试 3 次）: camera=%d file=%s err=%v", cameraID, filepath.Base(localPath), lastErr)

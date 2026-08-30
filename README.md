@@ -28,7 +28,7 @@
 
 ### 💾 存储管理
 - **本地存储**：磁盘空间监控、按保留天数 / 容量上限自动清理
-- **WebDAV 存储**：远程归档、按保留天数 / 容量上限清理
+- **WebDAV 存储**：远程归档、按保留天数 / 容量上限清理；支持「仅存 WebDAV」模式（上传即删本地，本地仅作临时缓冲，旧录像回放自动走 WebDAV 流式播放）
 - **MinIO / S3**：可选对象存储（配置已预留）
 - 存储占用统计
 
@@ -178,6 +178,7 @@ storage:
     base_path: surveillance
     max_days: 30
     max_storage_gb: 150
+    only: false                 # 仅存 WebDAV：true 时录像上传成功即删本地副本，本地仅作临时缓冲
   minio:
     enabled: false              # 可选
 
@@ -400,10 +401,11 @@ surveillance-system/
   4. 录像类型设置为「移动侦测」或移动侦测触发录像已开启
 
 ### 磁盘空间不足
-1. 减小 `max_days` 或增大分段清理频率
-2. 设置 `max_storage_gb` 容量上限
-3. 启用 WebDAV 远程归档分流
-4. 手动触发清理：`POST /api/v1/storage/cleanup`
+1. **开启「仅存 WebDAV」模式**（系统设置 → 存储 → WebDAV → 仅存 WebDAV，或配置 `webdav.only: true`）：录像上传成功即删本地副本，本地磁盘只保留上传前的临时缓冲（一段录像大小），适合本地磁盘小、以 WebDAV 为主存储的场景；旧录像回放自动走 WebDAV 流式播放
+2. 减小 `max_days` 或增大分段清理频率
+3. 设置 `max_storage_gb` 容量上限
+4. 启用 WebDAV 远程归档分流
+5. 手动触发清理：`POST /api/v1/storage/cleanup`
 
 ---
 

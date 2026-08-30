@@ -201,6 +201,10 @@
               <el-switch v-model="storageForm.webdav.enabled" />
               <span class="form-hint">开启后每个录像分段完成即上传到 WebDAV 服务器（本地仍保留）</span>
             </el-form-item>
+            <el-form-item label="仅存 WebDAV">
+              <el-switch v-model="storageForm.webdav.only" :disabled="!storageForm.webdav.enabled" />
+              <span class="form-hint">开启后录像上传成功即删除本地副本，本地仅作临时缓冲（上传失败则保留本地防丢失）；旧录像回放自动走 WebDAV 流式播放</span>
+            </el-form-item>
             <el-form-item label="服务器地址">
               <el-input v-model="storageForm.webdav.url" placeholder="http://192.168.1.100:5005/webdav" style="width: 400px" />
             </el-form-item>
@@ -337,6 +341,7 @@ const storageForm = reactive({
     base_path: 'surveillance',
     max_days: 30,
     max_storage_gb: 0,
+    only: false,
   },
 })
 
@@ -389,6 +394,7 @@ const loadStorageSettings = async () => {
         storageForm.webdav.base_path = res.webdav.base_path || 'surveillance'
         storageForm.webdav.max_days = res.webdav.max_days ?? 30
         storageForm.webdav.max_storage_gb = res.webdav.max_storage_gb ?? 0
+        storageForm.webdav.only = !!res.webdav.only
       }
     }
   } catch (e) { console.error(e) }
@@ -411,6 +417,7 @@ const saveStorageSettings = async () => {
         base_path: storageForm.webdav.base_path,
         max_days: storageForm.webdav.max_days,
         max_storage_gb: storageForm.webdav.max_storage_gb,
+        only: storageForm.webdav.only,
       },
     })
     ElMessage.success(res?.message || '保存成功')

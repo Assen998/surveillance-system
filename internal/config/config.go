@@ -79,6 +79,10 @@ type WebdavConfig struct {
 	MaxDays int `mapstructure:"max_days" yaml:"max_days" json:"max_days"`
 	// MaxStorageGB 远程占用上限（GB）；0 = 不限制；超限时从最旧录像开始删除
 	MaxStorageGB float64 `mapstructure:"max_storage_gb" yaml:"max_storage_gb" json:"max_storage_gb"`
+	// Only WebDAV 独占模式：true 时录像上传成功后立即删除本地副本，
+	// 本地仅作为上传前的临时缓冲（上传失败则保留本地文件防丢失）。
+	// 旧录像回放自动走 WebDAV 流式播放。
+	Only bool `mapstructure:"only" yaml:"only" json:"only"`
 }
 
 type MinIOConfig struct {

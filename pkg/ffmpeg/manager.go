@@ -173,7 +173,8 @@ func (s *Stream) runSegment() error {
 	args := []string{
 		"-y",                                     // 覆盖输出
 		"-rtsp_transport", "tcp",                 // TCP 传输更稳定
-		"-timeout", "5000000",                    // RTSP 读超时 5 秒（微秒）
+		// 不加 -timeout/-stimeout：ffmpeg 4.x RTSP 的 timeout 选项会触发监听模式报错，
+		// 7.x 又不识别 -stimeout；跨版本安全做法是不加，由管理器看门狗清理卡死进程。
 		"-i", "INPUT_URL_PLACEHOLDER",            // 占位符，稍后替换
 	}
 
@@ -755,7 +756,7 @@ func (p *PreviewStream) Start() error {
 	args := []string{
 		"-y",
 		"-rtsp_transport", "tcp",
-		"-timeout", "5000000",
+		// 不加 -timeout/-stimeout（跨版本兼容，见 Stream 处说明）
 		"-i", p.rtspURL,
 		"-map", "0:v:0",
 		"-c:v", "libx264",

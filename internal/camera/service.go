@@ -534,7 +534,10 @@ func (m *CameraManager) runMotionRecording(inst *CameraInstance, rtspURL string,
 	args := []string{
 		"-y",
 		"-rtsp_transport", "tcp",
-		"-timeout", "5000000",
+		// 注意：不传 -timeout/-stimeout/-rw_timeout。
+		// ffmpeg 4.x 的 RTSP 有已废弃的 timeout 选项，设置后会隐含监听模式导致
+		// "Cannot assign requested address"；而 -stimeout/-rw_timeout 在 7.x 又不被识别。
+		// 跨版本安全的做法是不加 socket 超时，由进程看门狗负责清理。
 		"-i", rtspURL,
 		"-c", "copy",        // 流拷贝，不转码（省 CPU）
 		"-movflags", "+faststart", // moov 移到文件头：浏览器秒得时长、可拖动进度

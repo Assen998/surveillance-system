@@ -607,7 +607,7 @@ func (s *Server) createCamera(c *gin.Context) {
 			"-show_entries", "stream=codec_name,width,height,r_frame_rate",
 			"-of", "json",
 			"-rtsp_transport", "tcp",
-			"-timeout", "5000000", // 5秒超时(微秒)
+			// 不加 -timeout/-stimeout（跨版本兼容；ffprobe 由上方 10s Go context 超时兜底）
 			rtspURL,
 		)
 

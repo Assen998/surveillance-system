@@ -30,11 +30,8 @@ var (
 )
 
 func main() {
-	// 解析命令行参数
-	configPath := "configs/config.yaml"
-	if len(os.Args) > 1 {
-		configPath = os.Args[1]
-	}
+	// 解析命令行参数：可选传配置文件路径，未传时自动查找
+	configPath := resolveConfigPath(os.Args)
 
 	// 加载配置
 	cfg, err := config.Load(configPath)
@@ -166,4 +163,22 @@ func initLogging(cfg *config.Config) {
 		// 这里可以使用 lumberjack 进行日志轮转
 		// 简化处理：只输出到 stdout
 	}
+}
+
+// resolveConfigPath 解析配置文件路径：
+// 1. 命令行显式指定（os.Args[1]）时优先使用；
+// 2. 否则按顺序查找：同目录 config.yaml → configs/config.yaml。
+// 这样 Release 单二进制（config.yaml 与二进制同目录）可直接运行，
+// 而源码目录（configs/config.yaml）下 go run 也能正常工作。
+func resolveConfigPath(args []string) string {
+	if len(args) > 1 && args[1] != "" {
+		return args[1]
+	}
+	for _, p := range []string{"config.yaml", "configs/config.yaml"} {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	// 都不存在时仍返回默认路径，交由 config.Load 报出明确错误
+	return "config.yaml"
 }

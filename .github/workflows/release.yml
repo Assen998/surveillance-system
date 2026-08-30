@@ -67,12 +67,12 @@ jobs:
             -o "${BIN}" \
             ./cmd/server
 
-          # 打包产物（含可执行文件 + 示例配置 + README）
+          # 打包产物（含可执行文件 + config.yaml + README；开箱即用）
           NAME="surveillance-system-${VERSION}-${GOOS}-${GOARCH}${GOARM:+-armv${GOARM}}"
           STAGE="${NAME}"
           mkdir -p "${STAGE}"
           cp "${BIN}" "${STAGE}/"
-          cp configs/config.yaml "${STAGE}/config.example.yaml"
+          cp configs/config.yaml "${STAGE}/config.yaml"
           cp README.md "${STAGE}/" 2>/dev/null || true
 
           if [ "${{ matrix.ext }}" = "zip" ]; then

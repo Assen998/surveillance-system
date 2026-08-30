@@ -72,7 +72,7 @@
 
 | 端 | 技术 |
 |----|------|
-| 后端 | Go 1.22 · Gin · GORM · SQLite · FFmpeg · Viper · logrus |
+| 后端 | Go 1.22 · Gin · GORM · SQLite（纯 Go 驱动，零 CGO）· FFmpeg · Viper · logrus |
 | 前端 | Vue 3 · TypeScript · Element Plus · Pinia · Vue Router · HLS.js · ECharts |
 | 协议 | ONVIF（底层 RTSP 拉流） |
 
@@ -89,21 +89,38 @@
 
 ### 构建
 
-```bash
-# 后端
-cd surveillance-system
-go build -o surveillance-server ./cmd/server
+前端构建产物通过 Go 的 `go:embed` 直接嵌入后端二进制，最终产出**单个可执行文件**，分发无需携带 `web/dist` 目录。
 
-# 前端（生成 web/dist）
+```bash
+cd surveillance-system
+
+# 1) 先构建前端（生成 web/dist，供 go:embed 嵌入）
 cd web
 npm install
 npm run build
+cd ..
+
+# 2) 再构建后端（自动嵌入前端 → 单二进制）
+go build -o surveillance-server ./cmd/server
 ```
+
+> 交叉编译（零 CGO，纯静态，支持 linux / windows / darwin × amd64 / 386 / arm / arm64）：
+> ```bash
+> CGO_ENABLED=0 GOOS=linux  GOARCH=arm64 go build -o surveillance-server ./cmd/server
+> ```
 
 ### 运行
 
+直接把 `config.yaml` 放在二进制同目录，无需参数直接启动：
+
 ```bash
-./surveillance-server configs/config.yaml
+./surveillance-server
+```
+
+程序会自动按顺序查找配置：同目录 `config.yaml` → `configs/config.yaml`，也可显式指定：
+
+```bash
+./surveillance-server /path/to/config.yaml
 ```
 
 启动后：
@@ -112,11 +129,27 @@ npm run build
 - 健康检查：`GET http://localhost:8080/health`
 - 默认账号：**admin / admin123**（首次登录后请尽快修改密码）
 
+### 直接下载发行版（无需编译）
+
+到 [GitHub Releases](https://github.com/Assen998/surveillance-system/releases) 下载对应平台的压缩包，解压后目录内已含：
+
+```
+surveillance-server         # 单二进制（前端已内嵌）
+config.yaml                 # 默认配置
+README.md
+```
+
+进入该目录直接运行即可：
+
+```bash
+./surveillance-server        # 自动读取同目录 config.yaml
+```
+
 ---
 
 ## 📖 配置说明
 
-配置文件位于 `configs/config.yaml`，关键配置项如下：
+配置文件位于 `configs/config.yaml`（源码）/ 产物目录内 `config.yaml`（发行版），关键配置项如下：
 
 ```yaml
 server:

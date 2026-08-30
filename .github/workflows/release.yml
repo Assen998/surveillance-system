@@ -68,8 +68,11 @@ jobs:
             ./cmd/server
 
           # 打包产物（含可执行文件 + config.yaml + README；开箱即用）
+          # 压缩包名带版本号（便于区分下载）；包内目录名不带版本号（稳定路径）：
+          # 升级时新版直接解压覆盖同名目录即可 —— data/、recordings/ 自动保留，
+          # systemd 单元 / 工作目录等引用无需改动。
           NAME="surveillance-system-${VERSION}-${GOOS}-${GOARCH}${GOARM:+-armv${GOARM}}"
-          STAGE="${NAME}"
+          STAGE="surveillance-system-${GOOS}-${GOARCH}${GOARM:+-armv${GOARM}}"
           mkdir -p "${STAGE}"
           cp "${BIN}" "${STAGE}/"
           cp configs/config.yaml "${STAGE}/config.yaml"

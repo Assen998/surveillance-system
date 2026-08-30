@@ -131,7 +131,7 @@ go build -o surveillance-server ./cmd/server
 
 ### 直接下载发行版（无需编译）
 
-到 [GitHub Releases](https://github.com/Assen998/surveillance-system/releases) 下载对应平台的压缩包，解压后目录内已含：
+到 [GitHub Releases](https://github.com/Assen998/surveillance-system/releases) 下载对应平台的压缩包（包名带版本号，如 `surveillance-system-1.0.7-linux-arm64.tar.gz`）。解压后得到一个**不带版本号的稳定目录**（如 `surveillance-system-linux-arm64/`），目录内已含：
 
 ```
 surveillance-server         # 单二进制（前端已内嵌）
@@ -144,6 +144,22 @@ README.md
 ```bash
 ./surveillance-server        # 自动读取同目录 config.yaml
 ```
+
+### 升级
+
+目录名不带版本号，升级时**直接在新版压缩包上解压覆盖同名目录**即可：
+
+```bash
+cd /root    # 假设部署在 /root/surveillance-system-linux-arm64
+cp surveillance-system-linux-arm64/config.yaml /tmp/config.yaml.bak   # ① 备份你的配置
+tar xzf ~/surveillance-system-1.0.7-linux-arm64.tar.gz                # ② 覆盖解压
+cp /tmp/config.yaml.bak surveillance-system-linux-arm64/config.yaml   # ③ 恢复配置
+systemctl restart surveillance-server   # ④ 重启（前台运行则重新 ./surveillance-server）
+```
+
+- `data/`（摄像头/账号等数据库）、`recordings/`（录像）**不在包内，覆盖解压自动保留**，无需手动拷贝
+- `config.yaml` 在包内，覆盖解压会被重置为默认值 → 按上面 ①③ 备份恢复（或升级后在网页「系统设置」里重新保存各项配置）
+- systemd 服务、开机自启等对目录的引用**无需任何改动**
 
 ---
 

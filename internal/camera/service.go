@@ -50,7 +50,7 @@ type CameraManager struct {
 type CameraInstance struct {
 	Model       *models.Camera
 	Stream      *ffmpeg.Stream
-	Preview     *ffmpeg.PreviewStream // 按需启动的 HLS 预览流（子码流，空闲自动停止）
+	Preview     *ffmpeg.PreviewStream // 按需启动的 HLS 预览流（主/子码流由 camera.preview_stream 配置，空闲自动停止）
 	OnvifClient *onvif.Client         // 每摄像头独立 ONVIF 客户端（避免共享凭据状态竞争）
 	Status      string
 	LastError   string
@@ -313,6 +313,33 @@ func (m *CameraManager) connectCamera(inst *CameraInstance) error {
 			}
 			inst.OnvifClient = client
 
+			// 获取 ONVIF 设备基本信息（制造商/型号/固件/串号）并持久化，供摄像头详情页展示
+			if devInfo, derr := client.GetDeviceInfo(cam.OnvifAddress); derr == nil && devInfo != nil {
+				updates := map[string]interface{}{}
+				if devInfo.Manufacturer != "" {
+					updates["manufacturer"] = devInfo.Manufacturer
+				}
+				if devInfo.Model != "" {
+					updates["model"] = devInfo.Model
+				}
+				if devInfo.Firmware != "" {
+					updates["firmware"] = devInfo.Firmware
+				}
+				if devInfo.SerialNumber != "" {
+					updates["serial_number"] = devInfo.SerialNumber
+				}
+				if len(updates) > 0 {
+					if res := m.db.Model(cam).Updates(updates); res.Error != nil {
+						logrus.Warnf("摄像头 %s 保存 ONVIF 设备信息失败: %v", cam.Name, res.Error)
+					} else {
+						logrus.Infof("摄像头 %s ONVIF 设备信息: %s %s（固件 %s，串号 %s）",
+							cam.Name, devInfo.Manufacturer, devInfo.Model, devInfo.Firmware, devInfo.SerialNumber)
+					}
+				}
+			} else if derr != nil {
+				logrus.Debugf("摄像头 %s 获取 ONVIF 设备信息失败: %v", cam.Name, derr)
+			}
+
 			// === 缓存检查 ===
 			// 事件型录像（motion）需要同时解析主/子码流，而缓存只存主码流地址，
 			// 故 motion 模式跳过缓存、强制重新发现（保证拿到子码流预览地址）。
@@ -475,7 +502,7 @@ func (m *CameraManager) connectCamera(inst *CameraInstance) error {
 		return fmt.Errorf("启动录像流失败: %w", err)
 	}
 
-	logrus.Infof("摄像头 %s 录像流启动成功（主码流 -c copy，预览按需走子码流）", cam.Name)
+	logrus.Infof("摄像头 %s 录像流启动成功（主码流 -c copy，预览按需，源码流由 preview_stream 配置）", cam.Name)
 
 	return nil
 }
@@ -735,8 +762,10 @@ func (m *CameraManager) Snapshot(cameraID uint) (string, error) {
 // previewIdleTimeout 预览流空闲超时（秒）：超时后自动停止以回收内存
 const previewIdleTimeout = 30 * time.Second
 
-// EnsurePreview 按需启动预览流（子码流 HLS 转码）。前端请求 HLS 播放列表时调用。
-// 若预览流未运行则启动；已运行则刷新空闲时间。返回是否可用（启动可能异步尚未产出 m3u8）。
+// EnsurePreview 按需启动预览流（HLS 转码，源码流由 camera.preview_stream 配置：
+// main=主码流（默认，高清）/ sub=子码流（低分辨率省带宽/CPU））。
+// 前端请求 HLS 播放列表时调用。若预览流未运行则启动；已运行则刷新空闲时间。
+// 返回是否可用（启动可能异步尚未产出 m3u8）。
 func (m *CameraManager) EnsurePreview(cameraID uint) error {
 	m.mu.RLock()
 	inst, ok := m.cameras[cameraID]
@@ -757,13 +786,26 @@ func (m *CameraManager) EnsurePreview(cameraID uint) error {
 		return nil
 	}
 
-	// 子码流地址兜底（可能尚未解析，回退主码流）
-	rtspURL := inst.PreviewRTSPURL
-	if rtspURL == "" {
+	// 按配置选择预览源码流；所选流未解析到时回退另一路，都没有则用基础地址
+	useSub := strings.EqualFold(m.cfg.Camera.PreviewStream, "sub")
+	var rtspURL string
+	if useSub {
+		rtspURL = inst.PreviewRTSPURL
+		if rtspURL == "" {
+			rtspURL = inst.RecordRTSPURL
+		}
+	} else {
 		rtspURL = inst.RecordRTSPURL
+		if rtspURL == "" {
+			rtspURL = inst.PreviewRTSPURL
+		}
 	}
 	if rtspURL == "" {
 		rtspURL = BuildRTSPURL(inst.Model)
+	}
+	previewSrc := "主码流"
+	if useSub {
+		previewSrc = "子码流"
 	}
 
 	outDir := m.getCameraStoragePath(cameraID)
@@ -773,7 +815,7 @@ func (m *CameraManager) EnsurePreview(cameraID uint) error {
 		return fmt.Errorf("启动预览流失败: %w", err)
 	}
 	inst.previewLastActive = time.Now()
-	logrus.Infof("摄像头 %s 预览流按需启动（子码流: %s）", inst.Model.Name, rtspURL)
+	logrus.Infof("摄像头 %s 预览流按需启动（%s: %s）", inst.Model.Name, previewSrc, rtspURL)
 	return nil
 }
 

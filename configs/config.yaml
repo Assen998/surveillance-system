@@ -51,6 +51,8 @@ camera:
     max_reconnect: 10
     snapshot_enabled: false
     snapshot_interval: 300
+    # 预览源码流：main=主码流（高清，默认）| sub=子码流（低分辨率，省带宽/CPU）
+    preview_stream: main
     onvif_event:
         enabled: true
         poll_interval: 10

@@ -435,6 +435,7 @@ const submitForm = async () => {
     submitLoading.value = true
     
     // 提交时只发送需要的字段
+    const dd = detectedDevice.value
     const payload = {
       name: cameraForm.name,
       description: cameraForm.description,
@@ -455,6 +456,11 @@ const submitForm = async () => {
       record_enabled: cameraForm.record_enabled,
       record_type: cameraForm.record_type,
       record_schedule: cameraForm.record_schedule,
+      // ONVIF 设备信息：只提交探测到的真实值（'-' 占位符不提交，后端保留原值/连接时自动抓取）
+      manufacturer: dd && dd.manufacturer && dd.manufacturer !== '-' ? dd.manufacturer : '',
+      model: dd && dd.model && dd.model !== '-' ? dd.model : '',
+      firmware: dd && dd.firmware && dd.firmware !== '-' ? dd.firmware : '',
+      serial_number: dd && dd.serialNumber ? dd.serialNumber : '',
     }
 
     if (isEditMode.value && editId.value) {

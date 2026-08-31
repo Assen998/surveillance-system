@@ -105,6 +105,8 @@ type CameraConfig struct {
 	OnvifEvent OnvifEventConfig `mapstructure:"onvif_event" yaml:"onvif_event"`
 	// MotionRecord 移动侦测触发录像（事件型录像：平时不录，检测到移动时才录）
 	MotionRecord MotionRecordConfig `mapstructure:"motion_record" yaml:"motion_record"`
+	// PreviewStream 预览源码流：main=主码流（高清，默认）| sub=子码流（低分辨率，省带宽/CPU）
+	PreviewStream string `mapstructure:"preview_stream" yaml:"preview_stream"`
 }
 
 // MotionRecordConfig 移动侦测触发录像配置（RecordType=motion 的摄像头生效）

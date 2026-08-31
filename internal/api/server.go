@@ -535,6 +535,11 @@ type cameraRequest struct {
 	Path        string  `json:"path"`
 	OnvifAddress      string  `json:"onvif_address"`
 	OnvifProfileToken string  `json:"onvif_profile_token"`
+	// ONVIF 设备信息（可选：后端 ONVIF 连接时自动抓取入库；前端探测后也可传入）
+	Manufacturer  string `json:"manufacturer"`
+	Model         string `json:"model"`
+	Firmware      string `json:"firmware"`
+	SerialNumber  string `json:"serial_number"`
 	DeviceID    *string `json:"device_id"`
 	// 指针类型：nil = 未传（更新时保留原值），避免不完整 payload 翻转 bool 字段
 	RecordEnabled   *bool   `json:"record_enabled"`
@@ -568,6 +573,10 @@ func (r *cameraRequest) toModel() *models.Camera {
 		Path:                r.Path,
 		OnvifAddress:        r.OnvifAddress,
 		OnvifProfileToken:   r.OnvifProfileToken,
+		Manufacturer:        r.Manufacturer,
+		Model:               r.Model,
+		Firmware:            r.Firmware,
+		SerialNumber:        r.SerialNumber,
 		DeviceID:            r.DeviceID,
 		RecordEnabled:       rec,
 		RecordSchedule:      r.RecordSchedule,
@@ -696,6 +705,19 @@ func (s *Server) updateCamera(c *gin.Context) {
 	}
 	if req.OnvifProfileToken == "" {
 		cam.OnvifProfileToken = existing.OnvifProfileToken
+	}
+	// ONVIF 设备信息由后端连接时自动抓取入库，未传时保留现有值
+	if req.Manufacturer == "" {
+		cam.Manufacturer = existing.Manufacturer
+	}
+	if req.Model == "" {
+		cam.Model = existing.Model
+	}
+	if req.Firmware == "" {
+		cam.Firmware = existing.Firmware
+	}
+	if req.SerialNumber == "" {
+		cam.SerialNumber = existing.SerialNumber
 	}
 	if cam.RecordSchedule == "" {
 		cam.RecordSchedule = existing.RecordSchedule

@@ -31,6 +31,12 @@ type Camera struct {
 	StreamUriUpdatedAt  *time.Time `json:"stream_uri_updated_at"`                // 缓存更新时间
 	DeviceID            *string `gorm:"size:50;uniqueIndex" json:"device_id"`   // GB28181 设备 ID，指针类型允许 NULL
 
+	// ONVIF 设备信息（连接时 GetDeviceInformation 自动获取并持久化）
+	Manufacturer string `gorm:"size:100" json:"manufacturer"`   // 制造商，如 HIKVISION
+	Model        string `gorm:"size:100" json:"model"`          // 型号，如 DS-2CD2041
+	Firmware     string `gorm:"size:50"  json:"firmware"`       // 固件版本
+	SerialNumber string `gorm:"size:100" json:"serial_number"`  // 设备串号
+
 	// 状态
 	Status      string `gorm:"size:20;default:'offline'" json:"status"` // online, offline, error
 	LastOnline  *time.Time `json:"last_online"`

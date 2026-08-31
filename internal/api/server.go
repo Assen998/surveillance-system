@@ -1557,7 +1557,17 @@ func (s *Server) listCameraRecordings(c *gin.Context) {
 	start, _ := parseTimeParam(c.Query("start"))
 	end, _ := parseTimeParam(c.Query("end"))
 
-	recs, total, err := storage.NewRecordingManager().QueryRecordings(cameraID, start, end, recordType, 1, 5000)
+	// 尊重前端分页参数（此前写死 1/5000，前端请求 10 条也返回 5000 条）
+	page, _ := strconv.Atoi(c.Query("page"))
+	pageSize, _ := strconv.Atoi(c.Query("page_size"))
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > 500 {
+		pageSize = 50
+	}
+
+	recs, total, err := storage.NewRecordingManager().QueryRecordings(cameraID, start, end, recordType, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

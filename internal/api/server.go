@@ -249,6 +249,8 @@ func (s *Server) setupRoutes() {
 				// 程序自更新
 				system.GET("/update/check", s.checkUpdate)
 				system.POST("/update", s.performUpdate)
+				system.GET("/update/config", s.getUpdateConfig)
+				system.PUT("/update/config", s.updateUpdateConfig)
 			}
 		}
 
@@ -2352,17 +2354,54 @@ const (
 	defaultGitHubRepo    = "Assen998/surveillance-system"
 )
 
-// updateEndpoint 更新源（可用环境变量覆盖，便于测试/私有部署）
-func updateEndpoint() (string, string) {
+// updateEndpoint 更新源（优先级：环境变量（测试用）> 配置文件 update.* > 默认值）
+func (s *Server) updateEndpoint() (string, string) {
 	base := os.Getenv("SURVEILLANCE_UPDATE_BASE")
+	if base == "" {
+		base = strings.TrimSpace(s.cfg.Update.BaseURL)
+	}
 	if base == "" {
 		base = defaultUpdateAPIBase
 	}
 	repo := os.Getenv("SURVEILLANCE_GITHUB_REPO")
 	if repo == "" {
+		repo = strings.TrimSpace(s.cfg.Update.GitHubRepo)
+	}
+	if repo == "" {
 		repo = defaultGitHubRepo
 	}
 	return strings.TrimRight(base, "/"), repo
+}
+
+// validProxyAddr 校验代理地址（http/https/socks5 + host）
+func validProxyAddr(p string) bool {
+	u, err := url.Parse(p)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return u.Scheme == "http" || u.Scheme == "https" || u.Scheme == "socks5"
+}
+
+// updateHTTPClient 构造更新请求客户端：
+// - 单地址拨号 5s 超时：部分网络（如 IPv6 出网被静默丢弃）会让首个解析地址
+//   长时间挂起，短超时让拨号器尽快回退到下一地址
+// - 支持 update.proxy 代理设置（国内直连 GitHub 被干扰时经代理走通），
+//   未配置时回退进程环境变量代理
+func (s *Server) updateHTTPClient(total time.Duration) *http.Client {
+	tr := &http.Transport{
+		DialContext:           (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+		MaxIdleConns:          4,
+		IdleConnTimeout:       60 * time.Second,
+		Proxy:                 http.ProxyFromEnvironment,
+	}
+	if p := strings.TrimSpace(s.cfg.Update.Proxy); p != "" && validProxyAddr(p) {
+		if u, err := url.Parse(p); err == nil {
+			tr.Proxy = http.ProxyURL(u)
+		}
+	}
+	return &http.Client{Timeout: total, Transport: tr}
 }
 
 type githubReleaseAsset struct {
@@ -2379,27 +2418,10 @@ type githubRelease struct {
 	Assets      []githubReleaseAsset `json:"assets"`
 }
 
-// newUpdateClient 构造更新请求客户端：
-// 单地址拨号 5s 超时——部分网络（如 IPv6 出网被静默丢弃）会让解析到的首个
-// 地址（常为 AAAA）长时间挂起；短超时让 net.Dialer 尽快回退到下一地址
-// （如 IPv4），避免整次请求等到总超时才失败（curl 的 Happy Eyeballs 无此问题）。
-func newUpdateClient(total time.Duration) *http.Client {
-	return &http.Client{
-		Timeout: total,
-		Transport: &http.Transport{
-			DialContext:           (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ResponseHeaderTimeout: 30 * time.Second,
-			MaxIdleConns:          4,
-			IdleConnTimeout:       60 * time.Second,
-		},
-	}
-}
-
-func fetchLatestRelease() (*githubRelease, error) {
-	base, repo := updateEndpoint()
+func (s *Server) fetchLatestRelease() (*githubRelease, error) {
+	base, repo := s.updateEndpoint()
 	url := fmt.Sprintf("%s/repos/%s/releases/latest", base, repo)
-	client := newUpdateClient(30 * time.Second)
+	client := s.updateHTTPClient(30 * time.Second)
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
@@ -2467,7 +2489,7 @@ func compareVersions(a, b string) int {
 
 // checkUpdate 检查 GitHub 最新 release 与当前版本
 func (s *Server) checkUpdate(c *gin.Context) {
-	rel, err := fetchLatestRelease()
+	rel, err := s.fetchLatestRelease()
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "检查更新失败: " + err.Error()})
 		return
@@ -2535,7 +2557,7 @@ func (s *Server) performUpdate(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "当前构建不支持在线更新"})
 		return
 	}
-	rel, err := fetchLatestRelease()
+	rel, err := s.fetchLatestRelease()
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "获取最新版本失败: " + err.Error()})
 		return
@@ -2567,7 +2589,7 @@ func (s *Server) performUpdate(c *gin.Context) {
 	defer os.Remove(newBin)
 
 	// 2) 下载
-	client := newUpdateClient(10 * time.Minute)
+	client := s.updateHTTPClient(10 * time.Minute)
 	resp, err := client.Get(asset.BrowserDownloadURL)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "下载失败: " + err.Error()})
@@ -2637,6 +2659,47 @@ func (s *Server) performUpdate(c *gin.Context) {
 			logrus.Errorf("更新后重启失败: %v", err)
 		}
 	}()
+}
+
+// getUpdateConfig 更新设置（代理等）
+func (s *Server) getUpdateConfig(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"proxy":       s.cfg.Update.Proxy,
+		"github_repo": s.cfg.Update.GitHubRepo,
+		"base_url":    s.cfg.Update.BaseURL,
+	})
+}
+
+// updateUpdateConfig 保存更新设置并持久化到 config.yaml（立即生效，无需重启）
+func (s *Server) updateUpdateConfig(c *gin.Context) {
+	var req struct {
+		Proxy      *string `json:"proxy"`
+		GitHubRepo *string `json:"github_repo"`
+		BaseURL    *string `json:"base_url"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Proxy != nil {
+		p := strings.TrimSpace(*req.Proxy)
+		if p != "" && !validProxyAddr(p) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "代理地址格式不正确，应形如 http://192.168.1.5:7890（支持 http/https/socks5）"})
+			return
+		}
+		s.cfg.Update.Proxy = p
+	}
+	if req.GitHubRepo != nil {
+		s.cfg.Update.GitHubRepo = strings.TrimSpace(*req.GitHubRepo)
+	}
+	if req.BaseURL != nil {
+		s.cfg.Update.BaseURL = strings.TrimRight(strings.TrimSpace(*req.BaseURL), "/")
+	}
+	if err := s.persistConfig(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "配置持久化失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "更新设置已保存（下次检查/更新即生效，无需重启）", "proxy": s.cfg.Update.Proxy})
 }
 
 // ========== WebSocket ==========

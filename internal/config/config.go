@@ -17,6 +17,18 @@ type Config struct {
 	Alert    AlertConfig    `mapstructure:"alert" yaml:"alert"`
 	GB28181  GB28181Config  `mapstructure:"gb28181" yaml:"gb28181"`
 	Logging  LoggingConfig  `mapstructure:"logging" yaml:"logging"`
+	Update   UpdateConfig   `mapstructure:"update" yaml:"update"`
+}
+
+// UpdateConfig 程序自更新配置
+type UpdateConfig struct {
+	// Proxy 更新检查/下载使用的 HTTP(S) 代理，如 http://192.168.1.5:7890；
+	// 留空 = 直连。国内网络直连 GitHub 不稳定/被干扰时配置代理后无需重启即可生效。
+	Proxy string `mapstructure:"proxy" yaml:"proxy"`
+	// GitHubRepo Release 源仓库（owner/repo），默认本项目（私有部署可改）
+	GitHubRepo string `mapstructure:"github_repo" yaml:"github_repo"`
+	// BaseURL 更新 API 基础地址，默认 https://api.github.com（可指向私有镜像）
+	BaseURL string `mapstructure:"base_url" yaml:"base_url"`
 }
 
 type ServerConfig struct {

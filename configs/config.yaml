@@ -99,3 +99,8 @@ logging:
     max_backups: 30
     max_age: 30
     compress: true
+# 程序自更新
+update:
+    # 更新检查/下载使用的 HTTP 代理（留空 = 直连）；
+    # 直连 GitHub 不稳定/被干扰的网络请配置代理，如 http://192.168.1.5:7890
+    proxy: ""

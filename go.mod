@@ -1,6 +1,8 @@
 module github.com/yourorg/surveillance-system
 
-go 1.22
+go 1.24
+
+toolchain go1.24.4
 
 require (
 	github.com/gin-gonic/gin v1.10.0
@@ -8,8 +10,8 @@ require (
 	github.com/gorilla/websocket v1.5.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.19.0
-	golang.org/x/crypto v0.23.0
-	golang.org/x/sys v0.30.0
+	golang.org/x/crypto v0.36.0
+	golang.org/x/sys v0.31.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/gorm v1.25.10
@@ -56,8 +58,8 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.8.0 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
-	golang.org/x/net v0.25.0 // indirect
-	golang.org/x/text v0.15.0 // indirect
+	golang.org/x/net v0.38.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
 	google.golang.org/protobuf v1.34.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	modernc.org/libc v1.61.13 // indirect

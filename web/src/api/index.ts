@@ -185,6 +185,9 @@ export const api = {
     // 程序自更新
     checkUpdate: () => request.get('/system/update/check'),
     performUpdate: () => request.post('/system/update', null, { timeout: 600000 }),
+    getUpdateConfig: () => request.get('/system/update/config'),
+    saveUpdateConfig: (data: { proxy?: string; github_repo?: string; base_url?: string }) =>
+      request.put('/system/update/config', data),
   },
 
   // 设置

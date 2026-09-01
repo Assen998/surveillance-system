@@ -261,6 +261,13 @@
               <el-icon><Download /></el-icon> 备份数据库
             </el-button>
           </div>
+          <div class="update-proxy-row">
+            <span class="update-proxy-label">更新代理（可选）</span>
+            <el-input v-model="updateCfg.proxy" placeholder="直连 GitHub 不稳定时填写，如 http://192.168.1.5:7890"
+              style="width: 340px" clearable size="small" />
+            <el-button size="small" @click="saveUpdateCfg" :loading="updateCfgSaving">保存</el-button>
+            <span v-if="updateCfg.proxy" class="text-success">使用中</span>
+          </div>
           <div class="update-info" v-if="updateInfo">
             <template v-if="updateInfo.error">
               <el-alert :title="updateInfo.error" type="warning" :closable="false" show-icon />
@@ -376,6 +383,8 @@ const sysInfo = ref<any>(null)
 const updateChecking = ref(false)
 const updating = ref(false)
 const updateInfo = ref<any>(null)
+const updateCfg = reactive({ proxy: '' })
+const updateCfgSaving = ref(false)
 
 // 数据库备份
 const backupFiles = ref<any[]>([])
@@ -717,9 +726,30 @@ const viewSystemInfo = async () => {
   try { sysInfo.value = await api.system.info() } catch (e) { /* 忽略 */ }
 }
 
+// 更新代理设置
+const loadUpdateCfg = async () => {
+  try {
+    const res: any = await api.system.getUpdateConfig()
+    updateCfg.proxy = res.proxy || ''
+  } catch (e) { /* 忽略 */ }
+}
+
+const saveUpdateCfg = async () => {
+  updateCfgSaving.value = true
+  try {
+    await api.system.saveUpdateConfig({ proxy: updateCfg.proxy.trim() })
+    ElMessage.success('更新代理设置已保存')
+    loadUpdateCfg()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || '保存失败')
+  } finally {
+    updateCfgSaving.value = false
+  }
+}
+
 onMounted(() => {
   loadSystemConfig(); viewSystemInfo(); loadStorageSettings(); loadSnapshotSettings()
-  loadBackups(); loadLogFiles(); loadLogTail()
+  loadBackups(); loadLogFiles(); loadLogTail(); loadUpdateCfg()
   logTimer = setInterval(() => { if (logAutoRefresh.value) loadLogTail() }, 5000)
 })
 onUnmounted(() => { if (logTimer) clearInterval(logTimer) })
@@ -760,6 +790,13 @@ onUnmounted(() => { if (logTimer) clearInterval(logTimer) })
     align-items: center;
     width: 100%;
     h3 { margin: 0; }
+  }
+  .update-proxy-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 16px;
+    .update-proxy-label { font-size: 13px; color: #606266; white-space: nowrap; }
   }
   .update-info {
     margin-top: 16px;

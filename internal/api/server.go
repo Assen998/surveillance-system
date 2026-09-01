@@ -10,6 +10,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -554,9 +555,10 @@ func (s *Server) listCameras(c *gin.Context) {
 		return
 	}
 
-	// 隐藏密码
+	// 隐藏密码 + 填充 PTZ 真实能力（ONVIF 探测结果）
 	for i := range cameras {
 		cameras[i].Password = ""
+		cameras[i].PTZSupported = s.cameraMgr.PTZCapability(cameras[i].ID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -696,6 +698,7 @@ func (s *Server) getCamera(c *gin.Context) {
 		return
 	}
 	cam.Password = ""
+	cam.PTZSupported = s.cameraMgr.PTZCapability(parseUint(id))
 	c.JSON(http.StatusOK, cam)
 }
 
@@ -1253,7 +1256,17 @@ func (s *Server) ptzControl(c *gin.Context) {
 	}
 
 	if err := s.cameraMgr.PTZControl(id, req.Command, req.Speed); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		// 业务错误映射为对应的 4xx/5xx，而非一律 500（前端据此展示可读提示）
+		switch {
+		case errors.Is(err, camera.ErrCameraNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case errors.Is(err, camera.ErrPTZNotSupported):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		case errors.Is(err, camera.ErrCameraOffline):
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusBadGateway, gin.H{"error": "PTZ 控制失败: " + err.Error()})
+		}
 		return
 	}
 

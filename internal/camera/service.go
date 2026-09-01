@@ -2,6 +2,7 @@ package camera
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -52,6 +53,7 @@ type CameraInstance struct {
 	Stream      *ffmpeg.Stream
 	Preview     *ffmpeg.PreviewStream // 按需启动的 HLS 预览流（主/子码流由 camera.preview_stream 配置，空闲自动停止）
 	OnvifClient *onvif.Client         // 每摄像头独立 ONVIF 客户端（避免共享凭据状态竞争）
+	PTZSupported bool                 // 设备是否提供 ONVIF PTZ 服务（GetCapabilities 探测，连接后更新）
 	Status      string
 	LastError   string
 	ReconnectCnt int
@@ -338,6 +340,16 @@ func (m *CameraManager) connectCamera(inst *CameraInstance) error {
 				}
 			} else if derr != nil {
 				logrus.Debugf("摄像头 %s 获取 ONVIF 设备信息失败: %v", cam.Name, derr)
+			}
+
+			// 探测设备是否真正提供 ONVIF PTZ 服务（固定枪机通常没有），
+			// 供前端判断是否展示云台控件，避免用户点击必然失败的按钮
+			inst.PTZSupported = false
+			if caps, cerr := client.GetCapabilities(cam.OnvifAddress); cerr == nil && caps != nil && caps.PTZXAddr != "" {
+				inst.PTZSupported = true
+				logrus.Infof("摄像头 %s ONVIF 支持 PTZ 服务", cam.Name)
+			} else {
+				logrus.Debugf("摄像头 %s ONVIF 未提供 PTZ 服务: %v", cam.Name, cerr)
 			}
 
 			// === 缓存检查 ===
@@ -1244,6 +1256,13 @@ func (m *CameraManager) DiscoverLAN(timeoutSec int) ([]*onvif.DeviceInfo, error)
 	return devices, nil
 }
 
+// 业务错误（非服务器故障）——API 层据此返回 4xx 而非 500
+var (
+	ErrCameraNotFound  = errors.New("摄像头不存在")
+	ErrCameraOffline   = errors.New("摄像头未连接")
+	ErrPTZNotSupported = errors.New("摄像头不支持 PTZ")
+)
+
 // PTZControl PTZ 控制
 func (m *CameraManager) PTZControl(cameraID uint, command string, speed float64) error {
 	m.mu.RLock()
@@ -1251,13 +1270,13 @@ func (m *CameraManager) PTZControl(cameraID uint, command string, speed float64)
 	m.mu.RUnlock()
 
 	if !ok {
-		return fmt.Errorf("摄像头不存在")
+		return ErrCameraNotFound
 	}
 	if !inst.Model.PTZEnabled {
-		return fmt.Errorf("摄像头不支持 PTZ")
+		return ErrPTZNotSupported
 	}
 	if inst.Status != models.CameraStatusOnline {
-		return fmt.Errorf("摄像头未连接")
+		return ErrCameraOffline
 	}
 
 	// 优先使用摄像头实例独立的 ONVIF 客户端（已带该摄像头凭据）
@@ -1265,6 +1284,19 @@ func (m *CameraManager) PTZControl(cameraID uint, command string, speed float64)
 		return inst.OnvifClient.PTZControl(inst.Model.OnvifAddress, command, speed)
 	}
 	return m.onvifClient.PTZControl(inst.Model.OnvifAddress, command, speed)
+}
+
+// PTZCapability 查询摄像头是否真正支持 PTZ（依据 ONVIF 探测结果）。
+// 返回 nil 表示摄像头尚未连接/未知；否则返回设备是否提供 PTZ 服务。
+func (m *CameraManager) PTZCapability(cameraID uint) *bool {
+	m.mu.RLock()
+	inst, ok := m.cameras[cameraID]
+	m.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	supported := inst.PTZSupported
+	return &supported
 }
 
 // updateCameraStatus 更新摄像头状态

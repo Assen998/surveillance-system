@@ -56,7 +56,10 @@ request.interceptors.response.use(
       localStorage.removeItem('token')
       window.location.href = '/login'
     } else {
-      ElMessage.error(error.response?.data?.message || error.message || '网络错误')
+      // 后端错误统一为 {error: "..."} 格式；优先展示可读的业务提示，
+      // 避免一律显示 "Request failed with status code xxx"
+      const msg = error.response?.data?.message || error.response?.data?.error
+      ElMessage.error(msg || error.message || '网络错误')
     }
     return Promise.reject(error)
   }

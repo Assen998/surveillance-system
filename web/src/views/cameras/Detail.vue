@@ -106,6 +106,11 @@
             <h3>云台控制 (PTZ)</h3>
           </template>
           <div class="ptz-control">
+            <div v-if="camera.ptz_supported === false" class="ptz-unavailable">
+              该摄像头不支持 PTZ 控制（固定机位无云台）。
+              如无需此功能，可在编辑摄像头时关闭「启用 PTZ 控制」。
+            </div>
+            <template v-else>
             <div class="ptz-direction">
               <el-button circle size="large" @mousedown="ptzStart('up')" @mouseup="ptzStop" @mouseleave="ptzStop">
                 <el-icon><ArrowUp /></el-icon>
@@ -139,6 +144,7 @@
               <el-slider v-model="ptzSpeed" :min="0.1" :max="1" :step="0.1" show-stops style="width: 200px" />
               <span>速度: {{ ptzSpeed }}</span>
             </div>
+            </template>
           </div>
         </el-card>
       </el-col>
@@ -439,20 +445,31 @@ const restartStream = async () => {
 }
 
 const ptzStart = (command: string) => {
-  if (!camera.value) return
+  if (!camera.value || camera.value.ptz_supported === false) return
   ptzTimer.value = setInterval(async () => {
     try {
       await api.cameras.ptz(camera.value.id, command, ptzSpeed.value)
-    } catch (e) { ptzStop() }
+    } catch (e: any) {
+      if (e?.response?.status === 400) {
+        // 后端判定不支持 PTZ：停止重试、不再发送 stop，控件区转为提示
+        if (ptzTimer.value) { clearInterval(ptzTimer.value); ptzTimer.value = null }
+        camera.value.ptz_supported = false
+      } else {
+        ptzStop()
+      }
+    }
   }, 200)
 }
 
 const ptzStop = () => {
+  const wasMoving = !!ptzTimer.value
   if (ptzTimer.value) {
     clearInterval(ptzTimer.value)
     ptzTimer.value = null
   }
-  if (camera.value) {
+  // 仅当 PTZ 实际运动中才下发停止指令；
+  // 避免离开页面时对不支持 PTZ 的摄像头发出无效请求触发错误提示
+  if (camera.value && wasMoving) {
     api.cameras.ptz(camera.value.id, 'stop', 0).catch(() => {})
   }
 }
@@ -509,6 +526,11 @@ onUnmounted(() => { if (hls) { hls.destroy(); hls = null } ptzStop() })
 
   .ptz-control {
     display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 8px;
+    .ptz-unavailable {
+      width: 100%; padding: 12px 16px; border-radius: 6px;
+      background: #fdf6ec; border: 1px solid #faecd8; color: #e6a23c;
+      font-size: 13px; line-height: 1.6; text-align: center;
+    }
     .ptz-direction { display: flex; justify-content: center; gap: 8px; }
     .ptz-zoom { display: flex; gap: 12px; }
     .ptz-speed { display: flex; align-items: center; gap: 12px; color: #909399; font-size: 13px; }

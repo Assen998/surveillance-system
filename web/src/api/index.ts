@@ -170,6 +170,21 @@ export const api = {
     updateConfig: (data: any) => request.put('/system/config', data),
     info: () => request.get('/system/info'),
     restart: () => request.post('/system/restart'),
+    // 日志
+    logTail: (params: { lines?: number; keyword?: string }) =>
+      request.get('/system/logs', { params }),
+    logFiles: () => request.get('/system/logs/files'),
+    clearLogs: () => request.post('/system/logs/clear'),
+    // 数据库备份
+    createBackup: () => request.post('/system/backup'),
+    listBackups: () => request.get('/system/backups'),
+    downloadBackup: (name: string) =>
+      request.get(`/system/backups/${encodeURIComponent(name)}/download`, { responseType: 'blob' }),
+    deleteBackup: (name: string) =>
+      request.delete(`/system/backups/${encodeURIComponent(name)}`),
+    // 程序自更新
+    checkUpdate: () => request.get('/system/update/check'),
+    performUpdate: () => request.post('/system/update', null, { timeout: 600000 }),
   },
 
   // 设置

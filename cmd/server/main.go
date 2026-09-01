@@ -3,14 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/yourorg/surveillance-system/internal/alert"
 	"github.com/yourorg/surveillance-system/internal/api"
@@ -28,6 +31,9 @@ var (
 	BuildTime = "unknown"
 	GitCommit = "unknown"
 )
+
+// startTime 进程启动时间（系统信息接口展示用）
+var startTime = time.Now()
 
 func main() {
 	// 解析命令行参数：可选传配置文件路径，未传时自动查找
@@ -94,6 +100,7 @@ func main() {
 	apiServer := api.NewServer(cfg, cameraMgr, storageMgr, alertMgr)
 	apiServer.SetRuntimeStorage(storageRT)
 	apiServer.SetConfigPath(configPath)
+	apiServer.SetVersionInfo(Version, BuildTime, GitCommit, startTime)
 
 	// 启动 HTTP 服务器
 	httpServer := &http.Server{
@@ -116,27 +123,46 @@ func main() {
 	// }
 	// go func() { ... }()
 
+	// 优雅关闭（信号路径 与 页面「重启系统/在线更新」共用）
+	shutdown := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(ctx); err != nil {
+			logrus.Errorf("HTTP 服务器关闭失败: %v", err)
+		}
+		cameraMgr.Stop()
+		storageMgr.Stop()
+		alertMgr.Stop()
+		onvifEventMgr.Stop()
+		ffmpegMgr.StopAll()
+		database.Close()
+	}
+
+	// 原地重启：优雅关闭后 os.Exec 重新执行二进制（PID 不变，systemd 无感知；
+	// 在线更新场景传入新二进制路径，重启即运行新版本）
+	apiServer.SetRestartFunc(func(newBinary string) error {
+		target := newBinary
+		if target == "" {
+			t, err := os.Executable()
+			if err != nil {
+				return err
+			}
+			if r, err := filepath.EvalSymlinks(t); err == nil {
+				t = r
+			}
+			target = t
+		}
+		shutdown()
+		return selfExec(target, append([]string{target}, os.Args[1:]...), os.Environ())
+	})
+
 	// 等待信号
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	logrus.Info("正在关闭服务器...")
-
-	// 优雅关闭
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := httpServer.Shutdown(ctx); err != nil {
-		logrus.Errorf("HTTP 服务器关闭失败: %v", err)
-	}
-
-	cameraMgr.Stop()
-	storageMgr.Stop()
-	alertMgr.Stop()
-	onvifEventMgr.Stop()
-	ffmpegMgr.StopAll()
-
+	shutdown()
 	logrus.Info("服务器已关闭")
 }
 
@@ -158,10 +184,23 @@ func initLogging(cfg *config.Config) {
 		})
 	}
 
-	// 输出到文件
+	// 输出到文件（lumberjack 轮转：max_size MB 触发、保留 max_backups 份），
+	// 同时保留 stdout（systemd journal 仍可查）。
 	if cfg.Logging.Output != "" {
-		// 这里可以使用 lumberjack 进行日志轮转
-		// 简化处理：只输出到 stdout
+		lj := &lumberjack.Logger{
+			Filename:   cfg.Logging.Output,
+			MaxSize:    cfg.Logging.MaxSize,
+			MaxBackups: cfg.Logging.MaxBackups,
+			MaxAge:     cfg.Logging.MaxAge,
+			Compress:   cfg.Logging.Compress,
+		}
+		if lj.MaxSize <= 0 {
+			lj.MaxSize = 100
+		}
+		if lj.MaxBackups <= 0 {
+			lj.MaxBackups = 10
+		}
+		logrus.SetOutput(io.MultiWriter(os.Stdout, lj))
 	}
 }
 

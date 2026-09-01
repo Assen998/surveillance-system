@@ -1,6 +1,8 @@
 package api
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -16,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,6 +49,28 @@ type Server struct {
 	wsUpgrader   websocket.Upgrader
 	runtimeStorage *storage.RuntimeStorage
 	cfgPath      string // config.yaml 路径，用于设置持久化
+
+	// 版本信息（构建时 ldflags 注入 main.Version，main 启动时传入）
+	version   string
+	buildTime string
+	gitCommit string
+	startTime time.Time
+
+	// 原地重启回调（main 注入：优雅关闭后 os.Exec 重新执行；newBinary 为空 = 重启当前二进制）
+	restartFunc func(newBinary string) error
+}
+
+// SetVersionInfo 注入版本信息（构建注入值 + 实际启动时间）
+func (s *Server) SetVersionInfo(version, buildTime, gitCommit string, startTime time.Time) {
+	s.version = version
+	s.buildTime = buildTime
+	s.gitCommit = gitCommit
+	s.startTime = startTime
+}
+
+// SetRestartFunc 注入原地重启实现（由 main 提供，负责优雅关闭 + os.Exec）
+func (s *Server) SetRestartFunc(f func(newBinary string) error) {
+	s.restartFunc = f
 }
 
 // SetRuntimeStorage 注入运行时存储设置
@@ -208,6 +233,21 @@ func (s *Server) setupRoutes() {
 				system.PUT("/config", s.updateSystemConfig)
 				system.GET("/info", s.getSystemInfo)
 				system.POST("/restart", s.restartSystem)
+
+				// 日志
+				system.GET("/logs", s.getLogTail)
+				system.GET("/logs/files", s.getLogFiles)
+				system.POST("/logs/clear", s.clearLogs)
+
+				// 数据库备份
+				system.POST("/backup", s.createBackup)
+				system.GET("/backups", s.listBackups)
+				system.GET("/backups/:name/download", s.downloadBackup)
+				system.DELETE("/backups/:name", s.deleteBackup)
+
+				// 程序自更新
+				system.GET("/update/check", s.checkUpdate)
+				system.POST("/update", s.performUpdate)
 			}
 		}
 
@@ -400,15 +440,15 @@ func (s *Server) healthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":    "ok",
 		"timestamp": time.Now().Unix(),
-		"version":   "1.0.0",
+		"version":   s.version,
 	})
 }
 
 func (s *Server) getVersion(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"version":   "1.0.0",
-		"buildTime": "2024-01-01",
-		"gitCommit": "dev",
+		"version":   s.version,
+		"buildTime": s.buildTime,
+		"gitCommit": s.gitCommit,
 	})
 }
 
@@ -1924,17 +1964,661 @@ func (s *Server) updateSystemConfig(c *gin.Context) {
 }
 
 func (s *Server) getSystemInfo(c *gin.Context) {
+	// 内存（/proc/meminfo，仅 Linux；解析失败时返回 0）
+	var memTotalKB, memAvailKB int64
+	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				continue
+			}
+			var v int64
+			fmt.Sscanf(fields[1], "%d", &v)
+			switch fields[0] {
+			case "MemTotal:":
+				memTotalKB = v
+			case "MemAvailable:":
+				memAvailKB = v
+			}
+		}
+	}
+
+	// 磁盘（录像目录所在分区；目录不存在时用当前目录）
+	diskPath := s.cfg.Storage.Local.RootPath
+	if diskPath == "" {
+		diskPath = "."
+	}
+	diskTotalMB, diskUsedMB := diskUsageMB(diskPath)
+
+	// 数据库文件大小
+	var dbSize int64
+	if p := s.cfg.Database.SQLite.Path; p != "" {
+		if fi, err := os.Stat(p); err == nil {
+			dbSize = fi.Size()
+		}
+	}
+
+	// 摄像头 / 录像数量
+	var cameraCount, recordingCount int64
+	if db := database.GetDB(); db != nil {
+		db.Model(&models.Camera{}).Count(&cameraCount)
+		db.Model(&models.Recording{}).Count(&recordingCount)
+	}
+
+	// 当前日志文件大小
+	var logSize int64
+	if p := s.logFilePath(); p != "" {
+		if fi, err := os.Stat(p); err == nil {
+			logSize = fi.Size()
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"version":     "1.0.0",
-		"go_version":  "go1.22",
-		"start_time":  time.Now().Add(-time.Hour).Unix(), // 模拟
-		"uptime":      3600,
+		"version":         s.version,
+		"build_time":      s.buildTime,
+		"git_commit":      s.gitCommit,
+		"go_version":      runtime.Version(),
+		"os":              runtime.GOOS,
+		"arch":            runtime.GOARCH,
+		"pid":             os.Getpid(),
+		"start_time":      s.startTime.Unix(),
+		"uptime":          int64(time.Since(s.startTime).Seconds()),
+		"cpu_count":       runtime.NumCPU(),
+		"mem_total_mb":    memTotalKB / 1024,
+		"mem_used_mb":     (memTotalKB - memAvailKB) / 1024,
+		"disk_total_mb":   diskTotalMB,
+		"disk_used_mb":    diskUsedMB,
+		"disk_path":       diskPath,
+		"db_size":         dbSize,
+		"camera_count":    cameraCount,
+		"recording_count": recordingCount,
+		"log_size":        logSize,
+		"config_path":     s.cfgPath,
 	})
 }
 
 func (s *Server) restartSystem(c *gin.Context) {
+	if s.restartFunc == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "当前构建不支持在线重启"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "系统重启中..."})
-	// TODO: 触发重启
+	go func() {
+		time.Sleep(300 * time.Millisecond) // 等待响应发出
+		if err := s.restartFunc(""); err != nil {
+			logrus.Errorf("原地重启失败: %v", err)
+		}
+	}()
+}
+
+// ========== 系统维护：日志 ==========
+
+// logFilePath 当前日志文件绝对路径（未配置时返回 ""）
+func (s *Server) logFilePath() string {
+	p := s.cfg.Logging.Output
+	if p == "" {
+		return ""
+	}
+	if !filepath.IsAbs(p) {
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
+	}
+	return p
+}
+
+// getLogTail 查看日志尾部（lines 条，可用 keyword 过滤，大小写不敏感）
+func (s *Server) getLogTail(c *gin.Context) {
+	path := s.logFilePath()
+	if path == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "未配置日志文件（logging.output）"})
+		return
+	}
+	n, _ := strconv.Atoi(c.DefaultQuery("lines", "200"))
+	if n <= 0 || n > 2000 {
+		n = 200
+	}
+	keyword := strings.ToLower(c.Query("keyword"))
+
+	var (
+		allLines []string
+		size     int64
+	)
+	if fi, err := os.Stat(path); err == nil {
+		size = fi.Size()
+		f, err := os.Open(path)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		defer f.Close()
+		// 只读文件尾部 4MB，避免大文件全量加载
+		const tailBytes = int64(4 * 1024 * 1024)
+		if size > tailBytes {
+			if _, err := f.Seek(size-tailBytes, io.SeekStart); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+		data, _ := io.ReadAll(f)
+		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+		if len(lines) > 0 && lines[0] == "" {
+			lines = lines[1:] // 尾部截取可能产生的首行残行
+		}
+		allLines = lines
+	}
+	if keyword != "" {
+		filtered := allLines[:0]
+		for _, l := range allLines {
+			if strings.Contains(strings.ToLower(l), keyword) {
+				filtered = append(filtered, l)
+			}
+		}
+		allLines = filtered
+	}
+	if len(allLines) > n {
+		allLines = allLines[len(allLines)-n:]
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"file":  path,
+		"size":  size,
+		"total": len(allLines),
+		"lines": allLines,
+	})
+}
+
+// getLogFiles 当前日志及轮转备份文件列表
+func (s *Server) getLogFiles(c *gin.Context) {
+	path := s.logFilePath()
+	type logFile struct {
+		Name    string `json:"name"`
+		Size    int64  `json:"size"`
+		ModTime int64  `json:"mod_time"`
+	}
+	files := []logFile{}
+	if path != "" {
+		dir := filepath.Dir(path)
+		base := filepath.Base(path)
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if name == base || strings.HasPrefix(name, base+".") {
+				if fi, err := e.Info(); err == nil {
+					files = append(files, logFile{Name: name, Size: fi.Size(), ModTime: fi.ModTime().Unix()})
+				}
+			}
+		}
+		sort.Slice(files, func(i, j int) bool {
+			if files[i].Name == base {
+				return true // 当前日志排最前
+			}
+			if files[j].Name == base {
+				return false
+			}
+			return files[i].Name < files[j].Name
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"dir": filepath.Dir(path), "files": files})
+}
+
+// clearLogs 清空当前日志（截断）并删除轮转备份文件
+func (s *Server) clearLogs(c *gin.Context) {
+	path := s.logFilePath()
+	if path == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "未配置日志文件（logging.output）"})
+		return
+	}
+	var freed int64
+	// 截断当前日志（lumberjack 以 O_APPEND 写入，截断后新日志从文件头继续，无空洞）
+	if f, err := os.OpenFile(path, os.O_TRUNC|os.O_WRONLY, 0644); err == nil {
+		if fi, serr := f.Stat(); serr == nil {
+			freed += fi.Size()
+		}
+		f.Close()
+	} else {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "打开日志失败: " + err.Error()})
+		return
+	}
+	// 删除轮转文件（base.1 / base.2 / base.1.gz ...）
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+	removed := 0
+	if entries, err := os.ReadDir(dir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasPrefix(e.Name(), base+".") {
+				continue
+			}
+			if fi, ierr := e.Info(); ierr == nil {
+				freed += fi.Size()
+			}
+			if os.Remove(filepath.Join(dir, e.Name())) == nil {
+				removed++
+			}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("日志已清理（删除 %d 个历史文件）", removed),
+		"freed":   freed,
+		"removed": removed,
+	})
+}
+
+// ========== 系统维护：数据库备份 ==========
+
+// backupDir 数据库备份目录（DB 文件所在目录下的 backups/）
+func (s *Server) backupDir() (string, error) {
+	dbPath := s.cfg.Database.SQLite.Path
+	if dbPath == "" {
+		return "", fmt.Errorf("未配置数据库路径")
+	}
+	return filepath.Join(filepath.Dir(dbPath), "backups"), nil
+}
+
+func isSafeBackupName(name string) bool {
+	if name == "" || strings.ContainsAny(name, "/\\") || strings.Contains(name, "..") {
+		return false
+	}
+	return strings.HasPrefix(name, "surveillance-") && strings.HasSuffix(name, ".db")
+}
+
+// createBackup 在线备份（优先 VACUUM INTO 一致性备份；失败回退为文件拷贝）
+func (s *Server) createBackup(c *gin.Context) {
+	dir, err := s.backupDir()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建备份目录失败: " + err.Error()})
+		return
+	}
+	name := "surveillance-" + time.Now().Format("20060102-150405") + ".db"
+	full := filepath.Join(dir, name)
+
+	usedMethod := ""
+	if db := database.GetDB(); db != nil && s.cfg.Database.Type == "sqlite" {
+		// VACUUM INTO 只接受字符串字面量文件名，路径可控（固定目录 + 时间戳名）
+		sql := "VACUUM INTO '" + strings.ReplaceAll(full, "'", "''") + "'"
+		if db.Exec(sql).Error == nil {
+			usedMethod = "vacuum_into"
+		}
+	}
+	if usedMethod == "" {
+		// 回退：文件拷贝（附 WAL，需停服后连同 -wal 一起恢复）
+		dbPath := s.cfg.Database.SQLite.Path
+		if err := copyFileAll(dbPath, full); err != nil {
+			os.Remove(full)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "备份失败: " + err.Error()})
+			return
+		}
+		if _, err := os.Stat(dbPath + "-wal"); err == nil {
+			copyFileAll(dbPath+"-wal", full+"-wal")
+		}
+		usedMethod = "file_copy"
+	}
+	var size int64
+	if fi, err := os.Stat(full); err == nil {
+		size = fi.Size()
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "备份成功", "file": name, "size": size, "method": usedMethod})
+}
+
+func copyFileAll(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Sync()
+}
+
+// listBackups 备份列表（新 → 旧）
+func (s *Server) listBackups(c *gin.Context) {
+	type backupFile struct {
+		Name    string `json:"name"`
+		Size    int64  `json:"size"`
+		ModTime int64  `json:"mod_time"`
+	}
+	files := []backupFile{}
+	if dir, err := s.backupDir(); err == nil {
+		if entries, err := os.ReadDir(dir); err == nil {
+			for _, e := range entries {
+				if e.IsDir() || !strings.HasSuffix(e.Name(), ".db") {
+					continue
+				}
+				if fi, ierr := e.Info(); ierr == nil {
+					files = append(files, backupFile{Name: e.Name(), Size: fi.Size(), ModTime: fi.ModTime().Unix()})
+				}
+			}
+		}
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].ModTime > files[j].ModTime })
+	c.JSON(http.StatusOK, gin.H{"files": files})
+}
+
+// downloadBackup 下载备份文件
+func (s *Server) downloadBackup(c *gin.Context) {
+	name := c.Param("name")
+	if !isSafeBackupName(name) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "非法文件名"})
+		return
+	}
+	dir, _ := s.backupDir()
+	full := filepath.Join(dir, name)
+	if fi, err := os.Stat(full); err != nil || fi.IsDir() {
+		c.JSON(http.StatusNotFound, gin.H{"error": "备份不存在"})
+		return
+	}
+	c.Header("Content-Disposition", "attachment; filename="+name)
+	c.File(full)
+}
+
+// deleteBackup 删除备份文件
+func (s *Server) deleteBackup(c *gin.Context) {
+	name := c.Param("name")
+	if !isSafeBackupName(name) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "非法文件名"})
+		return
+	}
+	dir, _ := s.backupDir()
+	full := filepath.Join(dir, name)
+	if _, err := os.Stat(full); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "备份不存在"})
+		return
+	}
+	if err := os.Remove(full); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已删除 " + name})
+}
+
+// ========== 系统维护：程序自更新 ==========
+
+const (
+	defaultUpdateAPIBase = "https://api.github.com"
+	defaultGitHubRepo    = "Assen998/surveillance-system"
+)
+
+// updateEndpoint 更新源（可用环境变量覆盖，便于测试/私有部署）
+func updateEndpoint() (string, string) {
+	base := os.Getenv("SURVEILLANCE_UPDATE_BASE")
+	if base == "" {
+		base = defaultUpdateAPIBase
+	}
+	repo := os.Getenv("SURVEILLANCE_GITHUB_REPO")
+	if repo == "" {
+		repo = defaultGitHubRepo
+	}
+	return strings.TrimRight(base, "/"), repo
+}
+
+type githubReleaseAsset struct {
+	Name               string `json:"name"`
+	Size               int64  `json:"size"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+	URL                string `json:"url"`
+}
+
+type githubRelease struct {
+	TagName     string               `json:"tag_name"`
+	Body        string               `json:"body"`
+	PublishedAt string               `json:"published_at"`
+	Assets      []githubReleaseAsset `json:"assets"`
+}
+
+func fetchLatestRelease() (*githubRelease, error) {
+	base, repo := updateEndpoint()
+	url := fmt.Sprintf("%s/repos/%s/releases/latest", base, repo)
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("更新源返回 HTTP %d", resp.StatusCode)
+	}
+	var rel githubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		return nil, err
+	}
+	return &rel, nil
+}
+
+// assetForCurrentPlatform 选取与当前平台匹配的产物
+// CI 命名规则：surveillance-system-{ver}-{os}-{arch}[-armvN].tar.gz
+// 注：runtime 包不提供 GOARM，32 位 ARM 用前缀模糊匹配
+func (r *githubRelease) assetForCurrentPlatform() *githubReleaseAsset {
+	ver := strings.TrimPrefix(r.TagName, "v")
+	suffix := fmt.Sprintf("-%s-%s.tar.gz", runtime.GOOS, runtime.GOARCH)
+	wantName := fmt.Sprintf("surveillance-system-%s%s", ver, suffix)
+	for i := range r.Assets {
+		if r.Assets[i].Name == wantName {
+			return &r.Assets[i]
+		}
+	}
+	for i := range r.Assets { // 版本号与 tag 不一致时的模糊匹配
+		if strings.HasSuffix(r.Assets[i].Name, suffix) {
+			return &r.Assets[i]
+		}
+	}
+	if runtime.GOARCH == "arm" { // 32 位 ARM：-armv6/7/8 后缀
+		prefix := fmt.Sprintf("surveillance-system-%s-%s-arm", ver, runtime.GOOS)
+		for i := range r.Assets {
+			if strings.HasPrefix(r.Assets[i].Name, prefix) && strings.HasSuffix(r.Assets[i].Name, ".tar.gz") {
+				return &r.Assets[i]
+			}
+		}
+	}
+	return nil
+}
+
+// compareVersions 比较类 semver 版本号（1.0.10 > 1.0.9）；返回 -1/0/1
+func compareVersions(a, b string) int {
+	pa := strings.Split(strings.TrimPrefix(strings.TrimSpace(a), "v"), ".")
+	pb := strings.Split(strings.TrimPrefix(strings.TrimSpace(b), "v"), ".")
+	for i := 0; i < len(pa) || i < len(pb); i++ {
+		var xa, xb int
+		if i < len(pa) {
+			xa, _ = strconv.Atoi(pa[i])
+		}
+		if i < len(pb) {
+			xb, _ = strconv.Atoi(pb[i])
+		}
+		if xa < xb {
+			return -1
+		}
+		if xa > xb {
+			return 1
+		}
+	}
+	return 0
+}
+
+// checkUpdate 检查 GitHub 最新 release 与当前版本
+func (s *Server) checkUpdate(c *gin.Context) {
+	rel, err := fetchLatestRelease()
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "检查更新失败: " + err.Error()})
+		return
+	}
+	latest := strings.TrimPrefix(rel.TagName, "v")
+	asset := rel.assetForCurrentPlatform()
+	resp := gin.H{
+		"current_version": s.version,
+		"latest_version":  latest,
+		"has_update":      compareVersions(latest, s.version) > 0,
+		"release_notes":   rel.Body,
+		"published_at":    rel.PublishedAt,
+	}
+	if asset != nil {
+		resp["asset_name"] = asset.Name
+		resp["asset_size"] = asset.Size
+	} else {
+		resp["asset_name"] = ""
+		resp["error"] = fmt.Sprintf("最新 release 中没有适用于 %s/%s 的产物", runtime.GOOS, runtime.GOARCH)
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// extractBinaryFromTarGz 从 release tar 包中只提取 surveillance-server 二进制
+// （包内 config.yaml/README.md 不触碰，部署目录的配置与数据保持不动）
+func extractBinaryFromTarGz(tarPath, dst string) error {
+	f, err := os.Open(tarPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if hdr.Typeflag != tar.TypeReg || filepath.Base(hdr.Name) != "surveillance-server" {
+			continue
+		}
+		out, err := os.Create(dst)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(out, tr); err != nil {
+			out.Close()
+			return err
+		}
+		return out.Close()
+	}
+	return fmt.Errorf("更新包中未找到 surveillance-server 二进制")
+}
+
+// performUpdate 下载最新 release → 提取二进制 → 校验 → 备份旧件 → 原子替换 → 原地重启
+func (s *Server) performUpdate(c *gin.Context) {
+	if s.restartFunc == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "当前构建不支持在线更新"})
+		return
+	}
+	rel, err := fetchLatestRelease()
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "获取最新版本失败: " + err.Error()})
+		return
+	}
+	latest := strings.TrimPrefix(rel.TagName, "v")
+	if compareVersions(latest, s.version) <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("当前已是最新版本（%s）", s.version)})
+		return
+	}
+	asset := rel.assetForCurrentPlatform()
+	if asset == nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("最新版本 %s 中没有适用于 %s/%s 的产物", rel.TagName, runtime.GOOS, runtime.GOARCH)})
+		return
+	}
+
+	// 1) 运行二进制所在目录
+	exe, err := os.Executable()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法确定运行目录: " + err.Error()})
+		return
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	dir := filepath.Dir(exe)
+	tmpTar := filepath.Join(dir, ".update-"+latest+".tar.gz")
+	newBin := filepath.Join(dir, ".surveillance-server.new")
+	defer os.Remove(tmpTar)
+	defer os.Remove(newBin)
+
+	// 2) 下载
+	client := &http.Client{Timeout: 10 * time.Minute}
+	resp, err := client.Get(asset.BrowserDownloadURL)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "下载失败: " + err.Error()})
+		return
+	}
+	f, err := os.Create(tmpTar)
+	if err != nil {
+		resp.Body.Close()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建临时文件失败: " + err.Error()})
+		return
+	}
+	n, copyErr := io.Copy(f, resp.Body)
+	resp.Body.Close()
+	f.Close()
+	if copyErr != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "下载中断: " + copyErr.Error()})
+		return
+	}
+	if asset.Size > 0 && n != asset.Size {
+		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("下载不完整（期望 %d 字节，实际 %d 字节）", asset.Size, n)})
+		return
+	}
+
+	// 3) 提取二进制
+	if err := extractBinaryFromTarGz(tmpTar, newBin); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "解压更新包失败: " + err.Error()})
+		return
+	}
+
+	// 4) 校验：ELF 魔数 + 最小体积
+	if fi, err := os.Stat(newBin); err != nil || fi.Size() < 512*1024 {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "新二进制校验失败（文件缺失或过小）"})
+		return
+	}
+	hdr := make([]byte, 4)
+	if hf, err := os.Open(newBin); err == nil {
+		io.ReadFull(hf, hdr)
+		hf.Close()
+	}
+	if string(hdr) != "\x7fELF" {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "新二进制校验失败（非 ELF 可执行文件）"})
+		return
+	}
+	if err := os.Chmod(newBin, 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "设置可执行权限失败: " + err.Error()})
+		return
+	}
+
+	// 5) 备份旧二进制 + 原子替换（任一步失败即回滚）
+	bak := filepath.Join(dir, "surveillance-server.bak")
+	os.Remove(bak)
+	if err := os.Rename(exe, bak); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "备份旧二进制失败: " + err.Error()})
+		return
+	}
+	if err := os.Rename(newBin, exe); err != nil {
+		os.Rename(bak, exe) // 回滚
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "替换二进制失败: " + err.Error()})
+		return
+	}
+
+	logrus.Infof("程序已更新 %s → %s，准备原地重启", s.version, latest)
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("已更新到 %s，系统重启中...", latest), "new_version": latest})
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		if err := s.restartFunc(exe); err != nil {
+			logrus.Errorf("更新后重启失败: %v", err)
+		}
+	}()
 }
 
 // ========== WebSocket ==========

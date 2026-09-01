@@ -63,7 +63,7 @@ jobs:
           if [ "$GOOS" = "windows" ]; then BIN="surveillance-server.exe"; fi
           go build \
             -trimpath \
-            -ldflags "-s -w -X main.Version=${VERSION}" \
+            -ldflags "-s -w -X main.Version=${VERSION} -X main.BuildTime='${GITHUB_RUN_AT}' -X main.GitCommit='${GITHUB_SHA::12}'" \
             -o "${BIN}" \
             ./cmd/server
 

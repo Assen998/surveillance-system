@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -2378,10 +2379,27 @@ type githubRelease struct {
 	Assets      []githubReleaseAsset `json:"assets"`
 }
 
+// newUpdateClient 构造更新请求客户端：
+// 单地址拨号 5s 超时——部分网络（如 IPv6 出网被静默丢弃）会让解析到的首个
+// 地址（常为 AAAA）长时间挂起；短超时让 net.Dialer 尽快回退到下一地址
+// （如 IPv4），避免整次请求等到总超时才失败（curl 的 Happy Eyeballs 无此问题）。
+func newUpdateClient(total time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: total,
+		Transport: &http.Transport{
+			DialContext:           (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+			MaxIdleConns:          4,
+			IdleConnTimeout:       60 * time.Second,
+		},
+	}
+}
+
 func fetchLatestRelease() (*githubRelease, error) {
 	base, repo := updateEndpoint()
 	url := fmt.Sprintf("%s/repos/%s/releases/latest", base, repo)
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := newUpdateClient(30 * time.Second)
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
@@ -2549,7 +2567,7 @@ func (s *Server) performUpdate(c *gin.Context) {
 	defer os.Remove(newBin)
 
 	// 2) 下载
-	client := &http.Client{Timeout: 10 * time.Minute}
+	client := newUpdateClient(10 * time.Minute)
 	resp, err := client.Get(asset.BrowserDownloadURL)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "下载失败: " + err.Error()})

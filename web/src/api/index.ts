@@ -77,6 +77,19 @@ export const api = {
       request.put('/auth/password', { old_password: oldPass, new_password: newPass }),
   },
 
+  // 用户管理（仅管理员）
+  users: {
+    list: () => request.get('/users'),
+    create: (data: any) => request.post('/users', data),
+    update: (id: number, data: any) => request.put(`/users/${id}`, data),
+    remove: (id: number) => request.delete(`/users/${id}`),
+    resetPassword: (id: number, password: string) =>
+      request.post(`/users/${id}/reset-password`, { password }),
+    listPermissions: (id: number) => request.get(`/users/${id}/permissions`),
+    setPermissions: (id: number, permissions: any[]) =>
+      request.put(`/users/${id}/permissions`, { permissions }),
+  },
+
   // 摄像头
   cameras: {
     list: () => request.get('/cameras'),

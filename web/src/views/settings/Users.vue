@@ -29,7 +29,7 @@
         <el-table-column prop="last_login" label="最后登录" width="180">
           <template #default="scope">{{ formatTime(scope.row.last_login) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="scope">
             <el-button-group size="small">
               <el-button link @click.stop="editUser(scope.row)">
@@ -41,6 +41,9 @@
               </el-button>
               <el-button link @click.stop="resetPassword(scope.row)">
                 <el-icon><Lock /></el-icon> 重置密码
+              </el-button>
+              <el-button link @click.stop="assignPermissions(scope.row)">
+                <el-icon><VideoCamera /></el-icon> 权限
               </el-button>
               <el-button link type="danger" @click.stop="deleteUser(scope.row.id)" v-if="scope.row.username !== 'admin'">
                 <el-icon><Delete /></el-icon> 删除
@@ -124,7 +127,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { UserFilled, Edit, Lock, Delete, User } from '@element-plus/icons-vue'
+import { UserFilled, Edit, Lock, Delete, User, VideoCamera } from '@element-plus/icons-vue'
 import { api } from '@/api'
 
 const users = ref<any[]>([])
@@ -163,11 +166,10 @@ const permType = (p: string) => ({ none: 'info', view: 'success', control: 'prim
 const formatTime = (time: string | null) => time ? new Date(time).toLocaleString('zh-CN') : '从未登录'
 
 const fetchUsers = async () => {
-  // 这里需要后端实现用户列表 API
-  // 暂时模拟数据
-  users.value = [
-    { id: 1, username: 'admin', email: 'admin@localhost', phone: '', role: 'admin', status: 'active', last_login: new Date().toISOString() },
-  ]
+  try {
+    const res: any = await api.users.list()
+    users.value = res.data || res || []
+  } catch (e) { /* 拦截器已提示 */ }
 }
 
 const showAddUserDialog = () => {
@@ -181,8 +183,8 @@ const editUser = (row: any) => {
   editingUserId.value = row.id
   userDialogTitle.value = '编辑用户'
   userForm.username = row.username
-  userForm.email = row.email
-  userForm.phone = row.phone
+  userForm.email = row.email || ''
+  userForm.phone = row.phone || ''
   userForm.role = row.role
   userForm.status = row.status
   userForm.password = ''
@@ -201,45 +203,90 @@ const submitUser = async () => {
   await userFormRef.value?.validate()
   userSubmitLoading.value = true
   try {
-    ElMessage.success(editingUserId.value ? '更新成功' : '创建成功')
+    if (editingUserId.value) {
+      const data: any = {
+        email: userForm.email,
+        phone: userForm.phone,
+        role: userForm.role,
+        status: userForm.status,
+      }
+      if (userForm.newPassword) data.new_password = userForm.newPassword
+      await api.users.update(editingUserId.value, data)
+      ElMessage.success('更新成功')
+    } else {
+      await api.users.create({
+        username: userForm.username,
+        password: userForm.password,
+        email: userForm.email,
+        phone: userForm.phone,
+        role: userForm.role,
+        status: userForm.status,
+      })
+      ElMessage.success('创建成功')
+    }
     userDialogVisible.value = false
     fetchUsers()
-  } catch (e) { console.error(e) }
+  } catch (e) { /* 拦截器已提示 */ }
   finally { userSubmitLoading.value = false }
 }
 
-const toggleUserStatus = (row: any) => {
+const toggleUserStatus = async (row: any) => {
   const newStatus = row.status === 'active' ? 'disabled' : 'active'
-  ElMessage.success(`用户已${newStatus === 'active' ? '启用' : '禁用'}`)
-  row.status = newStatus
+  try {
+    await api.users.update(row.id, { status: newStatus })
+    ElMessage.success(`用户已${newStatus === 'active' ? '启用' : '禁用'}`)
+    fetchUsers()
+  } catch (e) { /* 拦截器已提示 */ }
 }
 
 const resetPassword = (row: any) => {
-  ElMessageBox.prompt('请输入新密码', '重置密码', { confirmButtonText: '确定', cancelButtonText: '取消', inputPattern: /^.{6,}$/, inputErrorMessage: '密码至少6位' })
-    .then(({ value }) => { ElMessage.success(`用户 ${row.username} 密码已重置`) })
-    .catch(() => {})
+  ElMessageBox.prompt('请输入新密码', `重置用户 ${row.username} 的密码`, {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    inputType: 'password',
+    inputPattern: /^.{6,}$/,
+    inputErrorMessage: '密码至少6位',
+  }).then(async ({ value }) => {
+    await api.users.resetPassword(row.id, value)
+    ElMessage.success(`用户 ${row.username} 密码已重置`)
+  }).catch(() => { /* 取消或失败（拦截器已提示后端错误） */ })
 }
 
 const deleteUser = (id: number) => {
-  ElMessageBox.confirm('确定删除该用户？', '提示', { type: 'warning' }).then(() => {
-    users.value = users.value.filter(u => u.id !== id)
+  ElMessageBox.confirm('确定删除该用户？删除后其登录凭证立即失效。', '提示', { type: 'warning' }).then(async () => {
+    await api.users.remove(id)
     ElMessage.success('删除成功')
+    fetchUsers()
   }).catch(() => {})
 }
 
 const assignPermissions = async (user: any) => {
   permUserId.value = user.id
   permUserName.value = user.username
-  // 获取用户当前权限和所有摄像头
-  cameraPermissions.value = [
-    { camera_id: 1, camera_name: '摄像头1', permission: 'view' },
-    { camera_id: 2, camera_name: '摄像头2', permission: 'none' },
-  ]
   permDialogVisible.value = true
+  cameraPermissions.value = []
+  try {
+    const [camRes, permRes]: any[] = await Promise.all([
+      api.cameras.list(),
+      api.users.listPermissions(user.id),
+    ])
+    const cams = (camRes.data || camRes || []) as any[]
+    const perms: any[] = permRes.data || permRes || []
+    cameraPermissions.value = cams.map((cam) => ({
+      camera_id: cam.id,
+      camera_name: cam.name,
+      permission: perms.find((p) => p.camera_id === cam.id)?.permission || 'none',
+    }))
+  } catch (e) { /* 拦截器已提示 */ }
 }
 
 const updateUserPermission = async (userId: number, cameraId: number, permission: string) => {
-  ElMessage.success(`权限已更新: ${permLabels[permission]}`)
+  try {
+    await api.users.setPermissions(userId, cameraPermissions.value.map((p) => ({
+      camera_id: p.camera_id,
+      permission: p.camera_id === cameraId ? permission : p.permission,
+    })))
+  } catch (e) { /* 拦截器已提示 */ }
 }
 
 onMounted(() => fetchUsers())

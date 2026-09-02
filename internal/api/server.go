@@ -174,6 +174,19 @@ func (s *Server) setupRoutes() {
 				cameras.GET("/probe", s.probeONVIFCamera)
 			}
 
+			// 用户管理（仅管理员）
+			users := secured.Group("/users")
+			users.Use(s.adminOnly())
+			{
+				users.GET("", s.listUsers)
+				users.POST("", s.createUser)
+				users.PUT("/:id", s.updateUser)
+				users.DELETE("/:id", s.deleteUser)
+				users.POST("/:id/reset-password", s.resetUserPassword)
+				users.GET("/:id/permissions", s.listUserPermissions)
+				users.PUT("/:id/permissions", s.setUserPermissions)
+			}
+
 			// 系统设置
 			settings := secured.Group("/settings")
 			{
@@ -545,6 +558,251 @@ func (s *Server) changePassword(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "密码修改成功"})
+}
+
+// ========== 用户管理（仅管理员） ==========
+
+// adminOnly 仅允许 admin 角色访问
+func (s *Server) adminOnly() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, _ := c.Get("role")
+		if role != models.UserRoleAdmin {
+			c.JSON(http.StatusForbidden, gin.H{"error": "需要管理员权限"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+func (s *Server) listUsers(c *gin.Context) {
+	var users []models.User
+	if err := database.GetDB().Order("id ASC").Find(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": users, "total": len(users)})
+}
+
+func (s *Server) createUser(c *gin.Context) {
+	var req struct {
+		Username string `json:"username" binding:"required,min=3,max=50"`
+		Password string `json:"password" binding:"required,min=6"`
+		Email    string `json:"email"`
+		Phone    string `json:"phone"`
+		Role     string `json:"role"`
+		Status   string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Role == "" {
+		req.Role = models.UserRoleViewer
+	}
+	if req.Status == "" {
+		req.Status = "active"
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+		return
+	}
+	user := models.User{
+		Username: req.Username,
+		Password: string(hash),
+		Email:    req.Email,
+		Phone:    req.Phone,
+		Role:     req.Role,
+		Status:   req.Status,
+	}
+	if err := database.GetDB().Create(&user).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "创建失败：用户名或邮箱已存在"})
+		return
+	}
+	user.Password = ""
+	c.JSON(http.StatusOK, user)
+}
+
+func (s *Server) updateUser(c *gin.Context) {
+	id := parseUint(c.Param("id"))
+	var req struct {
+		Username    *string `json:"username"`
+		Email       *string `json:"email"`
+		Phone       *string `json:"phone"`
+		Role        *string `json:"role"`
+		Status      *string `json:"status"`
+		NewPassword *string `json:"new_password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var target models.User
+	if err := database.GetDB().First(&target, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+
+	updates := map[string]interface{}{}
+	if req.Username != nil && *req.Username != "" {
+		updates["username"] = *req.Username
+	}
+	if req.Email != nil {
+		updates["email"] = *req.Email
+	}
+	if req.Phone != nil {
+		updates["phone"] = *req.Phone
+	}
+	if req.Role != nil && *req.Role != "" {
+		// 防止管理员把自己降级导致系统失去管理员
+		if *req.Role != models.UserRoleAdmin && target.Role == models.UserRoleAdmin {
+			if me, _ := c.Get("username"); me == target.Username {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "不能取消自己的管理员角色"})
+				return
+			}
+		}
+		updates["role"] = *req.Role
+	}
+	if req.Status != nil && *req.Status != "" {
+		if target.Role == models.UserRoleAdmin && *req.Status != "active" {
+			if me, _ := c.Get("username"); me == target.Username {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "不能禁用自己的管理员账号"})
+				return
+			}
+			var adminCount int64
+			database.GetDB().Model(&models.User{}).
+				Where("role = ? AND status = ?", models.UserRoleAdmin, "active").
+				Count(&adminCount)
+			if adminCount <= 1 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "不能禁用最后一个管理员"})
+				return
+			}
+		}
+		updates["status"] = *req.Status
+	}
+	if req.NewPassword != nil && *req.NewPassword != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(*req.NewPassword), bcrypt.DefaultCost)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+			return
+		}
+		updates["password"] = string(hash)
+	}
+	if len(updates) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "没有需要更新的字段"})
+		return
+	}
+	if res := database.GetDB().Model(&models.User{}).Where("id = ?", id).Updates(updates); res.Error != nil {
+		if strings.Contains(res.Error.Error(), "UNIQUE constraint") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "更新失败：用户名或邮箱已存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": res.Error.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
+}
+
+func (s *Server) deleteUser(c *gin.Context) {
+	id := parseUint(c.Param("id"))
+	me, _ := c.Get("username")
+
+	var target models.User
+	if err := database.GetDB().First(&target, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+	if target.Username == me {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不能删除自己的账号"})
+		return
+	}
+	if target.Role == models.UserRoleAdmin {
+		var adminCount int64
+		database.GetDB().Model(&models.User{}).
+			Where("role = ? AND status = ?", models.UserRoleAdmin, "active").
+			Count(&adminCount)
+		if adminCount <= 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "不能删除最后一个管理员"})
+			return
+		}
+	}
+	if err := database.GetDB().Delete(&models.User{}, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+}
+
+func (s *Server) resetUserPassword(c *gin.Context) {
+	id := parseUint(c.Param("id"))
+	var req struct {
+		Password string `json:"password" binding:"required,min=6"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+		return
+	}
+	res := database.GetDB().Model(&models.User{}).Where("id = ?", id).Update("password", string(hash))
+	if res.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": res.Error.Error()})
+		return
+	}
+	if res.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "密码重置成功"})
+}
+
+func (s *Server) listUserPermissions(c *gin.Context) {
+	id := parseUint(c.Param("id"))
+	var perms []models.CameraPermission
+	if err := database.GetDB().Where("user_id = ?", id).Find(&perms).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": perms, "total": len(perms)})
+}
+
+func (s *Server) setUserPermissions(c *gin.Context) {
+	id := parseUint(c.Param("id"))
+	var req struct {
+		Permissions []models.CameraPermission `json:"permissions"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var user models.User
+	if err := database.GetDB().First(&user, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+	// 全量替换语义：先删后插
+	db := database.GetDB()
+	if err := db.Where("user_id = ?", id).Delete(&models.CameraPermission{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	for i := range req.Permissions {
+		req.Permissions[i].ID = 0
+		req.Permissions[i].UserID = id
+		if req.Permissions[i].Permission == "" {
+			req.Permissions[i].Permission = "view"
+		}
+		if err := db.Create(&req.Permissions[i]).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "权限已更新"})
 }
 
 // ========== 摄像头管理 ==========

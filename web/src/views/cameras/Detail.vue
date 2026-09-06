@@ -19,6 +19,10 @@
           </div>
         </div>
         <div class="camera-actions">
+          <el-radio-group v-model="previewStream" size="small" class="stream-switch" @change="onStreamChange">
+            <el-radio-button value="sub">子码流</el-radio-button>
+            <el-radio-button value="main">主码流</el-radio-button>
+          </el-radio-group>
           <el-button-group>
             <el-button :type="camera.record_enabled ? 'success' : ''" @click="toggleRecord" :loading="recordLoading">
               <el-icon><VideoCamera /></el-icon>
@@ -249,6 +253,8 @@ const videoContainer = ref<HTMLElement>()
 const videoPlayer = ref<HTMLVideoElement>()
 const videoLoading = ref(true)
 const videoError = ref<string>('')
+// 预览源码流：sub=子码流(流畅，默认省资源) / main=主码流(高清，高配机器)
+const previewStream = ref<'sub' | 'main'>('sub')
 const isFullscreen = ref(false)
 const isMuted = ref(true)
 const isRecording = ref(false)
@@ -305,6 +311,13 @@ const loadCameraDetail = async () => {
     const res = await api.cameras.get(Number(route.params.id))
     camera.value = res.data || res
     isRecording.value = camera.value.record_enabled
+    // 预览码流：优先用户上次的选择（localStorage），否则跟随服务端全局默认
+    const savedStream = localStorage.getItem(`previewStream_${camera.value.id}`)
+    if (savedStream === 'main' || savedStream === 'sub') {
+      previewStream.value = savedStream
+    } else if (camera.value.preview_default === 'main' || camera.value.preview_default === 'sub') {
+      previewStream.value = camera.value.preview_default
+    }
     // 等待 v-if="camera" 区域渲染出 <video> 元素后再初始化播放器
     await nextTick()
     initPlayer()
@@ -341,7 +354,7 @@ const initPlayer = async () => {
     hls = null
   }
 
-  const hlsUrl = api.stream.hlsPlaylist(camera.value.id)
+  const hlsUrl = api.stream.hlsPlaylist(camera.value.id, previewStream.value)
 
   if (Hls.isSupported()) {
     hls = new Hls({
@@ -450,6 +463,19 @@ const takeSnapshot = async () => {
   finally { snapshotLoading.value = false }
 }
 
+// 预览码流切换（子码流/主码流）：持久化选择并用新 URL 重载 HLS 源。
+// 后端检测到码流变化会自动停旧启新（分段序号连续，hls.js 无缝续播）。
+const onStreamChange = (val: 'sub' | 'main') => {
+  if (!camera.value) return
+  previewStream.value = val
+  localStorage.setItem(`previewStream_${camera.value.id}`, val)
+  if (hls) {
+    videoLoading.value = true
+    videoError.value = ''
+    hls.loadSource(api.stream.hlsPlaylist(camera.value.id, val))
+  }
+}
+
 const restartStream = async () => {
   if (!camera.value) return
   restartLoading.value = true
@@ -516,6 +542,8 @@ onUnmounted(() => { if (hls) { hls.destroy(); hls = null } ptzStop() })
     .camera-basic h2 { margin: 0 0 8px; font-size: 20px; font-weight: 600; }
     .camera-meta { display: flex; flex-wrap: wrap; gap: 12px; }
     .meta-item { font-size: 13px; color: #909399; }
+    .camera-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .stream-switch { margin-right: 4px; }
   }
 
   .video-card {

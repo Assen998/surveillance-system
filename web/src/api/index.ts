@@ -128,7 +128,8 @@ export const api = {
 
   // 流媒体（浏览器直接加载，需通过 ?token= 携带鉴权令牌）
   stream: {
-    hlsPlaylist: (cameraId: number) => mediaUrl(`/api/v1/stream/camera/${cameraId}/hls`),
+    // stream: 'main'=主码流(高清) / 'sub'=子码流(流畅)；缺省=跟随服务端全局配置
+    hlsPlaylist: (cameraId: number, stream?: string) => mediaUrl(`/api/v1/stream/camera/${cameraId}/hls${stream ? `?stream=${stream}` : ''}`),
     hlsSegment: (cameraId: number, file: string) => mediaUrl(`/api/v1/stream/camera/${cameraId}/hls/${file}`),
     mp4: (cameraId: number) => mediaUrl(`/api/v1/stream/camera/${cameraId}/mp4`),
     snapshot: (cameraId: number) => mediaUrl(`/api/v1/stream/camera/${cameraId}/snapshot`),

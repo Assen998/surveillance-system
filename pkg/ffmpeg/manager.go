@@ -727,6 +727,9 @@ type PreviewStream struct {
 	running   bool
 	startTime time.Time
 	mu        sync.Mutex
+	// Src 本实例转码所用的源码流（"main"/"sub"），由管理器启动时写入，
+	// 供预览页切换码流时判断是否需要停旧启新
+	Src string
 }
 
 func NewPreviewStream(cameraID uint, rtspURL, outputDir string) *PreviewStream {

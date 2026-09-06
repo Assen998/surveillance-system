@@ -813,10 +813,12 @@ func (s *Server) listCameras(c *gin.Context) {
 		return
 	}
 
-	// 隐藏密码 + 填充 PTZ 真实能力（ONVIF 探测结果）
+	// 隐藏密码 + 填充 PTZ 真实能力（ONVIF 探测结果）+ 预览默认码流
+	previewDefault := s.cameraMgr.NormalizePreviewSrc("")
 	for i := range cameras {
 		cameras[i].Password = ""
 		cameras[i].PTZSupported = s.cameraMgr.PTZCapability(cameras[i].ID)
+		cameras[i].PreviewDefault = previewDefault
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -957,6 +959,7 @@ func (s *Server) getCamera(c *gin.Context) {
 	}
 	cam.Password = ""
 	cam.PTZSupported = s.cameraMgr.PTZCapability(parseUint(id))
+	cam.PreviewDefault = s.cameraMgr.NormalizePreviewSrc("")
 	c.JSON(http.StatusOK, cam)
 }
 
@@ -1906,8 +1909,10 @@ func (s *Server) getRecordingSegments(c *gin.Context) {
 // ========== 流媒体/回放 ==========
 func (s *Server) getHLSPlaylist(c *gin.Context) {
 	cameraID := c.Param("cameraId")
-	// 按需启动预览流（子码流 HLS 转码），空闲超时后由管理器自动回收
-	if err := s.cameraMgr.EnsurePreview(parseUint(cameraID)); err != nil {
+	// 按需启动预览流（HLS 转码），空闲超时后由管理器自动回收。
+	// stream 查询参数：main=主码流 / sub=子码流；缺省跟随全局配置。
+	stream := c.Query("stream")
+	if err := s.cameraMgr.EnsurePreview(parseUint(cameraID), stream); err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "预览流启动失败: " + err.Error()})
 		return
 	}

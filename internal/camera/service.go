@@ -774,11 +774,11 @@ func (m *CameraManager) Snapshot(cameraID uint) (string, error) {
 // previewIdleTimeout 预览流空闲超时（秒）：超时后自动停止以回收内存
 const previewIdleTimeout = 30 * time.Second
 
-// EnsurePreview 按需启动预览流（HLS 转码，源码流由 camera.preview_stream 配置：
-// main=主码流（默认，高清）/ sub=子码流（低分辨率省带宽/CPU））。
-// 前端请求 HLS 播放列表时调用。若预览流未运行则启动；已运行则刷新空闲时间。
-// 返回是否可用（启动可能异步尚未产出 m3u8）。
-func (m *CameraManager) EnsurePreview(cameraID uint) error {
+// EnsurePreview 按需启动预览流（HLS 转码）。src 指定源码流："main"=主码流（高清）
+// /"sub"=子码流（低分辨率省带宽/CPU）；空值回退全局配置 camera.preview_stream。
+// 前端请求 HLS 播放列表时调用。若预览流未运行则启动；已运行且码流一致则
+// 刷新空闲时间；已运行但码流不同（用户在预览页切换）则停旧启新。
+func (m *CameraManager) EnsurePreview(cameraID uint, src string) error {
 	m.mu.RLock()
 	inst, ok := m.cameras[cameraID]
 	m.mu.RUnlock()
@@ -789,19 +789,27 @@ func (m *CameraManager) EnsurePreview(cameraID uint) error {
 		return fmt.Errorf("摄像头未启用")
 	}
 
+	src = m.NormalizePreviewSrc(src)
+
 	inst.previewMu.Lock()
 	defer inst.previewMu.Unlock()
 
-	// 已运行：刷新空闲时间即可
+	// 已运行：码流一致只需刷新空闲时间；不一致（用户切换码流）则停旧启新
 	if inst.Preview != nil && inst.Preview.IsRunning() {
-		inst.previewLastActive = time.Now()
-		return nil
+		if inst.Preview.Src == src {
+			inst.previewLastActive = time.Now()
+			return nil
+		}
+		old := inst.Preview
+		inst.Preview = nil
+		// Stop 最长阻塞约 5 秒（kill+等待+残留清理）：用户主动切换，可接受
+		old.Stop()
+		logrus.Infof("摄像头 %s 预览码流切换: %s → %s", inst.Model.Name, old.Src, src)
 	}
 
-	// 按配置选择预览源码流；所选流未解析到时回退另一路，都没有则用基础地址
-	useSub := strings.EqualFold(m.cfg.Camera.PreviewStream, "sub")
+	// 所选流未解析到时回退另一路，都没有则用基础地址
 	var rtspURL string
-	if useSub {
+	if src == "sub" {
 		rtspURL = inst.PreviewRTSPURL
 		if rtspURL == "" {
 			rtspURL = inst.RecordRTSPURL
@@ -815,20 +823,31 @@ func (m *CameraManager) EnsurePreview(cameraID uint) error {
 	if rtspURL == "" {
 		rtspURL = BuildRTSPURL(inst.Model)
 	}
-	previewSrc := "主码流"
-	if useSub {
-		previewSrc = "子码流"
-	}
 
 	outDir := m.getCameraStoragePath(cameraID)
 	inst.Preview = ffmpeg.NewPreviewStream(cameraID, rtspURL, outDir)
+	inst.Preview.Src = src
 	if err := inst.Preview.Start(); err != nil {
 		inst.Preview = nil
 		return fmt.Errorf("启动预览流失败: %w", err)
 	}
 	inst.previewLastActive = time.Now()
-	logrus.Infof("摄像头 %s 预览流按需启动（%s: %s）", inst.Model.Name, previewSrc, rtspURL)
+	logrus.Infof("摄像头 %s 预览流按需启动（%s: %s）", inst.Model.Name, src, rtspURL)
 	return nil
+}
+
+// NormalizePreviewSrc 规范化预览码流标识：仅接受 main/sub（忽略大小写），
+// 其余取值（含空值）回退全局配置 camera.preview_stream
+func (m *CameraManager) NormalizePreviewSrc(src string) string {
+	switch strings.ToLower(src) {
+	case "main", "sub":
+		return strings.ToLower(src)
+	default:
+		if strings.EqualFold(m.cfg.Camera.PreviewStream, "sub") {
+			return "sub"
+		}
+		return "main"
+	}
 }
 
 // TouchPreview 刷新预览流空闲时间（HLS 分段请求时调用，保持活跃）

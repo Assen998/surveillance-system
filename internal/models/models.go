@@ -58,6 +58,8 @@ type Camera struct {
 	PTZEnabled bool `gorm:"default:false" json:"ptz_enabled"`
 	// PTZSupported 设备是否真正提供 PTZ 服务（ONVIF 能力探测，不入库；null = 尚未连接未知）
 	PTZSupported *bool `gorm:"-" json:"ptz_supported"`
+	// PreviewDefault 服务端全局预览默认码流（main/sub，不入库），供预览页初始化切换控件
+	PreviewDefault string `gorm:"-" json:"preview_default"`
 
 	// 关联
 	Recordings []Recording `gorm:"foreignKey:CameraID" json:"-"`

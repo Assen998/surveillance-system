@@ -752,9 +752,9 @@ func (p *PreviewStream) Start() error {
 		p.mu.Unlock()
 		return err
 	}
-	// 清理上一会话残留的 HLS 文件（正常情况 Stop 已清理；
-	// 进程崩溃/被 kill -9 时 Stop 未执行，旧文件会留在盘上）。
-	// 不清理的话，新流就绪前播放器会读到旧播放列表，画面停留上次场景。
+	// 计算新会话的分段起始序号（在会话间延续），再清理上一会话残留的
+	// HLS 文件。不清理的话，新流就绪前播放器会读到旧播放列表，画面停留上次场景。
+	startSeq := p.nextStartSequence()
 	p.removeHLSFiles(p.listHLSFiles())
 
 	args := []string{
@@ -776,8 +776,14 @@ func (p *PreviewStream) Start() error {
 		"-hls_list_size", "6",
 		"-hls_flags", "delete_segments+append_list",
 		"-hls_segment_filename", filepath.Join(p.outputDir, "hls_segment_%03d.ts"),
-		filepath.Join(p.outputDir, "index.m3u8"),
 	}
+	// 分段序号在会话间延续：预览流空闲回收后重启时，hls.js 记忆中的
+	// media sequence 与新播放列表连续，按正常直播推进续播；若每次都
+	// 归零重排，播放器把序号跳变当断流，触发 404/重同步造成卡顿黑屏。
+	if startSeq > 0 {
+		args = append(args, "-start_number", strconv.Itoa(startSeq))
+	}
+	args = append(args, filepath.Join(p.outputDir, "index.m3u8"))
 
 	p.cmd = exec.CommandContext(p.ctx, "ffmpeg", args...)
 	if err := p.cmd.Start(); err != nil {
@@ -826,6 +832,11 @@ func (p *PreviewStream) Stop() {
 	// 清理本次会话的 HLS 残留（播放列表+分段），防止下次预览
 	// 在新流就绪前读到旧播放列表、先看到上次停止时的画面
 	p.removeHLSFiles(stale)
+	// 持久化本会话最大分段序号：下次 Start 从该号延续，
+	// 保证 hls.js 的 media sequence 跨会话连续（文件已删，需单独记住）
+	if maxSeq := maxHLSSequenceFromNames(stale); maxSeq >= 0 {
+		os.WriteFile(filepath.Join(p.outputDir, hlsSeqStateFile), []byte(strconv.Itoa(maxSeq)), 0644)
+	}
 }
 
 func (p *PreviewStream) IsRunning() bool {
@@ -854,7 +865,39 @@ func (p *PreviewStream) listHLSFiles() []string {
 	return names
 }
 
-// removeHLSFiles 删除指定的 HLS 残留文件
+// hlsSeqStateFile 记录上次会话最大分段序号的隐式状态文件（点前缀，不匹配 HLS 清理规则）
+const hlsSeqStateFile = ".hls_last_seq"
+
+// nextStartSequence 计算新会话的分段起始号：
+// 取"上次 Stop 保存的最大号"与"磁盘现存分段最大号"（崩溃残留场景）的较大者 +1；
+// 两者都没有时返回 0（从头编号，不传 -start_number）。
+func (p *PreviewStream) nextStartSequence() int {
+	last := -1
+	if data, err := os.ReadFile(filepath.Join(p.outputDir, hlsSeqStateFile)); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && n > last {
+			last = n
+		}
+	}
+	if disk := maxHLSSequenceFromNames(p.listHLSFiles()); disk > last {
+		last = disk
+	}
+	return last + 1
+}
+
+// maxHLSSequenceFromNames 从 HLS 文件名列表提取最大分段号；无则返回 -1
+func maxHLSSequenceFromNames(names []string) int {
+	max := -1
+	for _, name := range names {
+		if !strings.HasPrefix(name, "hls_segment_") || !strings.HasSuffix(name, ".ts") {
+			continue
+		}
+		num := 0
+		if _, err := fmt.Sscanf(name[len("hls_segment_"):len(name)-3], "%d", &num); err == nil && num > max {
+			max = num
+		}
+	}
+	return max
+}
 func (p *PreviewStream) removeHLSFiles(names []string) {
 	for _, name := range names {
 		if os.Remove(filepath.Join(p.outputDir, name)) == nil {

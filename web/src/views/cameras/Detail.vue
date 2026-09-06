@@ -327,6 +327,7 @@ const loadRecentData = async () => {
 }
 
 let hls: Hls | null = null
+let hlsFatalRetries = 0 // 连续 fatal 错误恢复次数（MANIFEST_PARSED 成功后清零）
 
 const initPlayer = async () => {
   if (!camera.value || !videoPlayer.value) return
@@ -355,15 +356,31 @@ const initPlayer = async () => {
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       videoPlayer.value?.play().catch(() => {})
       videoLoading.value = false
+      hlsFatalRetries = 0 // 播放恢复正常，重置重试计数
     })
 
     hls.on(Hls.Events.ERROR, (_, data) => {
-      if (data.fatal) {
-        videoError.value = '视频流加载失败，请检查摄像头连接'
-        videoLoading.value = false
-        hls?.destroy()
-        hls = null
+      if (!data.fatal) return
+      // fatal 错误先尝试恢复（预览流空闲回收后重启、网络抖动等场景），
+      // 多次恢复失败才判定为真正故障，避免一次错误就黑屏卡死
+      if (hlsFatalRetries < 3) {
+        hlsFatalRetries++
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          hls?.startLoad() // 网络错误（如分段 404/播放列表加载失败）：重新拉流
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          hls?.recoverMediaError() // 解码/媒体错误：重建 media 元素
+        } else {
+          // 其他错误：整体重建播放器
+          hls?.destroy()
+          hls = null
+          initPlayer()
+        }
+        return
       }
+      videoError.value = '视频流加载失败，请检查摄像头连接'
+      videoLoading.value = false
+      hls?.destroy()
+      hls = null
     })
 
     // 监控统计

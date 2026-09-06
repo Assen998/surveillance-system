@@ -1913,9 +1913,10 @@ func (s *Server) getHLSPlaylist(c *gin.Context) {
 	}
 	file := "./recordings/camera_" + cameraID + "/index.m3u8"
 
-	// 预览流刚按需启动，index.m3u8 生成有 1~3 秒延迟；短暂轮询等待其就绪，
-	// 避免 HLS.js 首次请求即命中 404 走 fatal 分支。
-	deadline := time.Now().Add(8 * time.Second)
+	// 预览流刚按需启动，index.m3u8 生成有 2~8 秒延迟（ARM 设备上
+	// RTSP 连接+转码启动更慢）；短暂轮询等待其就绪，避免 HLS.js
+	// 首次请求即命中 404 走 fatal 分支。
+	deadline := time.Now().Add(15 * time.Second)
 	for {
 		if _, err := os.Stat(file); err == nil {
 			break

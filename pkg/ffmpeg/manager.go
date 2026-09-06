@@ -752,6 +752,10 @@ func (p *PreviewStream) Start() error {
 		p.mu.Unlock()
 		return err
 	}
+	// 清理上一会话残留的 HLS 文件（正常情况 Stop 已清理；
+	// 进程崩溃/被 kill -9 时 Stop 未执行，旧文件会留在盘上）。
+	// 不清理的话，新流就绪前播放器会读到旧播放列表，画面停留上次场景。
+	p.removeHLSFiles(p.listHLSFiles())
 
 	args := []string{
 		"-y",
@@ -808,6 +812,9 @@ func (p *PreviewStream) Stop() {
 	if !running {
 		return
 	}
+	// 先快照当前残留的 HLS 文件名，进程退出后只清理这一批：
+	// 避免与刚启动的新预览流竞态（极端时序下误删新流已写的文件）
+	stale := p.listHLSFiles()
 	p.cancel()
 	if proc != nil {
 		proc.Kill()
@@ -816,12 +823,44 @@ func (p *PreviewStream) Stop() {
 	case <-p.doneChan:
 	case <-time.After(5 * time.Second):
 	}
+	// 清理本次会话的 HLS 残留（播放列表+分段），防止下次预览
+	// 在新流就绪前读到旧播放列表、先看到上次停止时的画面
+	p.removeHLSFiles(stale)
 }
 
 func (p *PreviewStream) IsRunning() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.running
+}
+
+// listHLSFiles 返回输出目录中当前存在的 HLS 文件（播放列表+分段）文件名。
+// 预览输出目录与录像 MP4（motion_*.mp4 等）共用，只按 HLS 专属文件名匹配。
+func (p *PreviewStream) listHLSFiles() []string {
+	entries, err := os.ReadDir(p.outputDir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if name == "index.m3u8" || (strings.HasPrefix(name, "hls_segment_") && strings.HasSuffix(name, ".ts")) {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// removeHLSFiles 删除指定的 HLS 残留文件
+func (p *PreviewStream) removeHLSFiles(names []string) {
+	for _, name := range names {
+		if os.Remove(filepath.Join(p.outputDir, name)) == nil {
+			logrus.Debugf("预览流 camera=%d 清理残留 HLS 文件: %s", p.cameraID, name)
+		}
+	}
 }
 
 func (p *PreviewStream) Done() <-chan struct{} {

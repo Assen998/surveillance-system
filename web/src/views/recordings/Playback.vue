@@ -137,6 +137,35 @@
             <p>WebDAV 上暂无该摄像头的录像</p>
           </div>
         </el-card>
+
+        <!-- MinIO 对象存储录像 -->
+        <el-card :shadow="never" class="mt-16">
+          <template #header>
+            <div class="card-header">
+              <h3><el-icon><Cloudy /></el-icon> MinIO 云录像</h3>
+              <el-button size="small" @click="loadMinioFiles" :loading="minioLoading">
+                <el-icon><Refresh /></el-icon>
+              </el-button>
+            </div>
+          </template>
+          <p class="webdav-hint" v-if="minioEnabled === false">MinIO 未启用（可在 存储设置 中配置）</p>
+          <div class="segment-list" v-else-if="minioFiles.length > 0">
+            <div class="segment-item" v-for="f in minioFiles" :key="f.path" :class="{ active: currentMinio === f.path }" @click="playMinioFile(f)">
+              <div class="segment-type" :class="f.name.startsWith('motion_') ? 'motion' : 'continuous'">
+                {{ f.name.startsWith('motion_') ? '移动' : '连续' }}
+              </div>
+              <div class="segment-info">
+                <p class="segment-time webdav-file-name" :title="f.name">{{ f.name }}</p>
+                <p class="segment-duration">{{ f.mod_time ? new Date(f.mod_time).toLocaleString('zh-CN') : '' }} · {{ formatBytes(f.size) }}</p>
+              </div>
+              <el-icon v-if="currentMinio === f.path"><VideoPlay class="playing" /></el-icon>
+            </div>
+          </div>
+          <div class="empty-state" v-else>
+            <el-icon><Cloudy /></el-icon>
+            <p>MinIO 上暂无该摄像头的录像</p>
+          </div>
+        </el-card>
       </el-col>
     </el-row>
   </div>
@@ -187,6 +216,12 @@ const webdavEnabled = ref<boolean | null>(null)
 const webdavFiles = ref<any[]>([])
 const webdavLoading = ref(false)
 const currentWebdav = ref<string | null>(null)
+
+// MinIO 云录像
+const minioEnabled = ref<boolean | null>(null)
+const minioFiles = ref<any[]>([])
+const minioLoading = ref(false)
+const currentMinio = ref<string | null>(null)
 const currentTime = ref(0)
 const duration = ref(0)
 const bufferPercent = ref(0)
@@ -211,6 +246,7 @@ const loadCamera = async () => {
     camera.value = res.data || res
     loadSegments()
     loadWebdavFiles()
+    loadMinioFiles()
   } catch (e) { ElMessage.error('获取摄像头失败'); router.push('/recordings') }
 }
 
@@ -264,6 +300,45 @@ const playWebdavFile = (f: any) => {
   }
 }
 
+// 加载 MinIO 上该摄像头的录像对象
+const loadMinioFiles = async () => {
+  if (!camera.value) return
+  minioLoading.value = true
+  try {
+    const res: any = await api.minio.list(camera.value.id)
+    minioEnabled.value = res.enabled !== false
+    minioFiles.value = (res.files || []).map((f: any) => ({
+      name: f.name, path: f.path, size: f.size,
+      mod_time: f.mod_time ? new Date(f.mod_time) : null,
+    }))
+  } catch (e) {
+    minioEnabled.value = null
+    minioFiles.value = []
+  } finally {
+    minioLoading.value = false
+  }
+}
+
+// 播放 MinIO 上的对象（流式代理，支持 Range 拖动）
+const playMinioFile = (f: any) => {
+  currentMinio.value = f.path
+  currentSegment.value = null
+  const video = videoPlayer.value
+  if (!video) return
+  videoLoading.value = true
+  loadingText.value = '正在从 MinIO 加载录像文件...'
+  isPlaying.value = false
+  video.pause()
+  video.removeAttribute('src')
+  video.load()
+  video.src = api.minio.fileUrl(f.path)
+  video.onloadedmetadata = () => {
+    videoLoading.value = false
+    video.play().catch(() => {})
+    isPlaying.value = true
+  }
+}
+
 const jumpToSegment = (seg: any) => {
   currentSegment.value = seg
   playSegment(seg)
@@ -273,6 +348,7 @@ const playSegment = (seg: any) => {
   const video = videoPlayer.value
   if (!video) return
   currentWebdav.value = null
+  currentMinio.value = null
   videoLoading.value = true
   loadingText.value = '正在加载录像文件...'
   isPlaying.value = false
@@ -334,6 +410,7 @@ const stopPlay = () => {
   isPlaying.value = false
   currentSegment.value = null
   currentWebdav.value = null
+  currentMinio.value = null
 }
 
 const downloadCurrent = async () => {

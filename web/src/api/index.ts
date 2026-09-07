@@ -161,6 +161,15 @@ export const api = {
       mediaUrl(`/api/v1/webdav/file?path=${encodeURIComponent(path)}`),
   },
 
+  // MinIO 远程录像
+  minio: {
+    list: (cameraId?: number) =>
+      request.get('/minio/list', { params: cameraId ? { camera_id: cameraId } : {} }),
+    // 浏览器 <video> 直接加载，走 ?token= 鉴权（支持 Range）
+    fileUrl: (path: string) =>
+      mediaUrl(`/api/v1/minio/file?path=${encodeURIComponent(path)}`),
+  },
+
   // 抓拍图片（全局列表）
   snapshots: {
     list: (params: any) => request.get('/snapshots', { params }),
@@ -216,6 +225,8 @@ export const api = {
       request.put('/settings/camera', data),
     testWebdav: (data: { url: string; username: string; password: string; base_path: string }) =>
       request.post('/settings/webdav/test', data),
+    testMinio: (data: { endpoint: string; access_key: string; secret_key: string; bucket: string; use_ssl: boolean; base_path: string }) =>
+      request.post('/settings/minio/test', data),
   },
 }
 

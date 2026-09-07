@@ -13,6 +13,7 @@ import (
 	"github.com/yourorg/surveillance-system/internal/config"
 	"github.com/yourorg/surveillance-system/internal/database"
 	"github.com/yourorg/surveillance-system/internal/models"
+	"github.com/yourorg/surveillance-system/pkg/minio"
 	"github.com/yourorg/surveillance-system/pkg/webdav"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -80,6 +81,14 @@ func (m *Manager) webdav() config.WebdavConfig {
 	return m.cfg.Storage.Webdav
 }
 
+// minio 返回当前生效的 MinIO 配置（运行时优先，未注入则用启动配置）
+func (m *Manager) minio() config.MinIOConfig {
+	if m.runtime != nil {
+		return m.runtime.GetMinIO()
+	}
+	return m.cfg.Storage.MinIO
+}
+
 func (m *Manager) Start() error {
 	if !m.cfg.Storage.Local.Enabled {
 		logrus.Info("本地存储未启用，跳过存储管理器启动")
@@ -145,6 +154,8 @@ func (m *Manager) doCleanup() {
 	}
 	// WebDAV 独立清理（远程保留天数 / 容量上限），与本地清理相互独立
 	m.doCleanupWebdav()
+	// MinIO 独立清理（远程保留天数 / 容量上限），与本地清理相互独立
+	m.doCleanupMinio()
 }
 
 func (m *Manager) doCleanupLocal(loc config.LocalStorageConfig) {
@@ -313,6 +324,92 @@ func (m *Manager) doCleanupWebdav() {
 
 	if deleted > 0 {
 		logrus.Infof("WebDAV 清理完成: 删除 %d 个远程文件, 释放约 %s", deleted, formatBytes(released))
+	}
+}
+
+// doCleanupMinio MinIO 远程存储独立清理（与 WebDAV 清理逻辑一致）：
+// - 按 MinIO 独立的保留天数删除过期对象
+// - 按 MinIO 独立的容量上限（GB）从最旧对象开始删除
+// 二者为 0 时跳过对应检查；未启用则直接返回。
+func (m *Manager) doCleanupMinio() {
+	mn := m.minio()
+	if !mn.Enabled || mn.Endpoint == "" || mn.Bucket == "" {
+		return
+	}
+	if mn.MaxDays <= 0 && mn.MaxStorageGB <= 0 {
+		return
+	}
+
+	client, err := minio.NewClient(mn.Endpoint, mn.AccessKey, mn.SecretKey, mn.Bucket, mn.UseSSL)
+	if err != nil {
+		logrus.Warnf("MinIO 清理：创建客户端失败: %v", err)
+		return
+	}
+
+	base := strings.Trim(strings.TrimSpace(mn.BasePath), "/")
+	entries, err := client.List(base)
+	if err != nil {
+		logrus.Warnf("MinIO 清理：列对象失败: %v", err)
+		return
+	}
+	if len(entries) == 0 {
+		return
+	}
+
+	now := time.Now()
+	// 保护窗口：刚上传的对象（修改时间在 10 分钟内）不参与清理，避免误删仍在写入的分段
+	protectWindow := 10 * time.Minute
+
+	deleted := 0
+	var released int64
+	deletedKeys := make(map[string]bool)
+	if mn.MaxDays > 0 {
+		cutoff := now.AddDate(0, 0, -mn.MaxDays)
+		for _, f := range entries {
+			if !f.ModTime.IsZero() && f.ModTime.Before(cutoff) && now.Sub(f.ModTime) > protectWindow {
+				if err := client.Delete(f.Key); err == nil {
+					deleted++
+					released += f.Size
+					deletedKeys[f.Key] = true
+				} else {
+					logrus.Warnf("MinIO 清理：删除过期对象失败 %s: %v", f.Key, err)
+				}
+			}
+		}
+	}
+
+	if mn.MaxStorageGB > 0 {
+		var total int64
+		for _, f := range entries {
+			total += f.Size
+		}
+		limit := int64(mn.MaxStorageGB * 1024 * 1024 * 1024)
+		if total-released > limit {
+			sort.SliceStable(entries, func(i, j int) bool {
+				return entries[i].ModTime.Before(entries[j].ModTime)
+			})
+			remaining := total - released
+			for _, f := range entries {
+				if remaining <= limit {
+					break
+				}
+				if deletedKeys[f.Key] || now.Sub(f.ModTime) <= protectWindow {
+					continue
+				}
+				if err := client.Delete(f.Key); err == nil {
+					deleted++
+					released += f.Size
+					remaining -= f.Size
+					logrus.Debugf("MinIO 容量清理：删除 %s（%s）", f.Key, formatBytes(f.Size))
+				} else {
+					logrus.Warnf("MinIO 容量清理：删除失败 %s: %v", f.Key, err)
+				}
+			}
+		}
+	}
+
+	if deleted > 0 {
+		logrus.Infof("MinIO 清理完成: 删除 %d 个远程对象, 释放约 %s", deleted, formatBytes(released))
 	}
 }
 

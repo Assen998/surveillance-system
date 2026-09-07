@@ -39,6 +39,7 @@ import (
 	"github.com/yourorg/surveillance-system/internal/models"
 	"github.com/yourorg/surveillance-system/internal/storage"
 	embedui "github.com/yourorg/surveillance-system"
+	"github.com/yourorg/surveillance-system/pkg/minio"
 	"github.com/yourorg/surveillance-system/pkg/webdav"
 )
 
@@ -195,6 +196,7 @@ func (s *Server) setupRoutes() {
 				settings.GET("/camera", s.getCameraSettings)
 				settings.PUT("/camera", s.updateCameraSettings)
 				settings.POST("/webdav/test", s.testWebdav)
+				settings.POST("/minio/test", s.testMinio)
 			}
 
 			// 录像管理
@@ -281,6 +283,10 @@ func (s *Server) setupRoutes() {
 			// WebDAV 远程录像（浏览 + 流式播放，?token= 鉴权）
 			media.GET("/webdav/list", s.listWebdavFiles)
 			media.GET("/webdav/file", s.streamWebdavFile)
+
+			// MinIO 远程录像（浏览 + 流式播放，?token= 鉴权）
+			media.GET("/minio/list", s.listMinIOFiles)
+			media.GET("/minio/file", s.streamMinIOFile)
 
 			// 回放/流媒体
 			stream := media.Group("/stream")
@@ -1185,6 +1191,7 @@ type storageSettingsRequest struct {
 	MaxStorageGB    *float64 `json:"max_storage_gb"` // 存储占用上限（GB），0 = 不限制；不传 = 不修改
 	CleanupInterval int    `json:"cleanup_interval"`
 	Webdav          *config.WebdavConfig `json:"webdav"`
+	MinIO           *config.MinIOConfig  `json:"minio"`
 }
 
 type webdavTestRequest struct {
@@ -1192,6 +1199,15 @@ type webdavTestRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	BasePath string `json:"base_path"`
+}
+
+type minioTestRequest struct {
+	Endpoint   string `json:"endpoint"`
+	AccessKey  string `json:"access_key"`
+	SecretKey  string `json:"secret_key"`
+	Bucket     string `json:"bucket"`
+	UseSSL     bool   `json:"use_ssl"`
+	BasePath   string `json:"base_path"`
 }
 
 func (s *Server) currentStorageSettings() config.LocalStorageConfig {
@@ -1206,6 +1222,13 @@ func (s *Server) currentWebdavSettings() config.WebdavConfig {
 		return s.runtimeStorage.GetWebdav()
 	}
 	return s.cfg.Storage.Webdav
+}
+
+func (s *Server) currentMinIOSettings() config.MinIOConfig {
+	if s.runtimeStorage != nil {
+		return s.runtimeStorage.GetMinIO()
+	}
+	return s.cfg.Storage.MinIO
 }
 
 // listWebdavFiles 列出 WebDAV 基础目录下某摄像头（或全部）的录像文件
@@ -1266,6 +1289,11 @@ func (s *Server) listWebdavFiles(c *gin.Context) {
 		files = []webdavFileItem{}
 	}
 	c.JSON(http.StatusOK, gin.H{"enabled": true, "camera_id": cameraID, "files": files})
+}
+
+// isMinioNoSuchKey 判断 MinIO 错误是否为"对象不存在"
+func isMinioNoSuchKey(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "NoSuchKey")
 }
 
 // validateWebdavRelPath 确保请求的远程路径在基础目录内且不含 .. 片段
@@ -1335,10 +1363,15 @@ func (s *Server) streamWebdavFile(c *gin.Context) {
 func (s *Server) getStorageSettings(c *gin.Context) {
 	loc := s.currentStorageSettings()
 	wd := s.currentWebdavSettings()
-	// 不返回密码明文，用是否已设置表示
+	mn := s.currentMinIOSettings()
+	// 不返回密码/密钥明文，用是否已设置表示
 	wdSet := wd
 	if wd.Password != "" {
 		wdSet.Password = "********"
+	}
+	mnSet := mn
+	if mn.SecretKey != "" {
+		mnSet.SecretKey = "********"
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
@@ -1348,6 +1381,7 @@ func (s *Server) getStorageSettings(c *gin.Context) {
 			"max_storage_gb":   loc.MaxStorageGB,
 			"cleanup_interval": loc.CleanupInterval,
 			"webdav":           wdSet,
+			"minio":            mnSet,
 		},
 	})
 }
@@ -1361,6 +1395,7 @@ func (s *Server) updateStorageSettings(c *gin.Context) {
 
 	loc := s.currentStorageSettings()
 	wd := s.currentWebdavSettings()
+	mio := s.currentMinIOSettings()
 
 	// 校验与更新本地存储
 	if req.RootPath != "" {
@@ -1406,13 +1441,37 @@ func (s *Server) updateStorageSettings(c *gin.Context) {
 		wd = w
 	}
 
+	// 更新 MinIO
+	if req.MinIO != nil {
+		mn := *req.MinIO
+		// 密钥传 "********" 或空表示不修改
+		if mn.SecretKey == "" || mn.SecretKey == "********" {
+			mn.SecretKey = mio.SecretKey
+		}
+		// endpoint 规范化：去除 scheme 与首尾斜杠
+		mn.Endpoint = strings.TrimPrefix(strings.TrimPrefix(mn.Endpoint, "http://"), "https://")
+		mn.Endpoint = strings.Trim(mn.Endpoint, "/")
+		// 校验 MinIO 独立保留策略
+		if mn.MaxDays < 0 || mn.MaxDays > 3650 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "MinIO 远程保留天数须在 0~3650 之间（0 表示不按时间自动删除）"})
+			return
+		}
+		if mn.MaxStorageGB < 0 || mn.MaxStorageGB > 100000 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "MinIO 远程占用上限须在 0~100000 GB 之间（0 表示不限制）"})
+			return
+		}
+		mio = mn
+	}
+
 	// 应用：运行时立即生效 + 内存配置 + 持久化到 config.yaml
 	if s.runtimeStorage != nil {
 		s.runtimeStorage.SetLocal(loc)
 		s.runtimeStorage.SetWebdav(wd)
+		s.runtimeStorage.SetMinIO(mio)
 	}
 	s.cfg.Storage.Local = loc
 	s.cfg.Storage.Webdav = wd
+	s.cfg.Storage.MinIO = mio
 
 	if err := s.persistConfig(); err != nil {
 		logrus.Warnf("持久化设置到 config.yaml 失败: %v（本次修改仅在内存生效，重启后还原）", err)
@@ -1487,6 +1546,130 @@ func (s *Server) testWebdav(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "message": "WebDAV 连接成功，可正常读写"})
+}
+
+func (s *Server) testMinio(c *gin.Context) {
+	var req minioTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效"})
+		return
+	}
+	endpoint := strings.TrimPrefix(strings.TrimPrefix(req.Endpoint, "http://"), "https://")
+	endpoint = strings.Trim(endpoint, "/")
+	if endpoint == "" || req.Bucket == "" {
+		c.JSON(http.StatusOK, gin.H{"ok": false, "error": "Endpoint 与 Bucket 不能为空"})
+		return
+	}
+	client, err := minio.NewClient(endpoint, req.AccessKey, req.SecretKey, req.Bucket, req.UseSSL)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	if err := client.TestAndUpload(req.BasePath); err != nil {
+		c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "message": "MinIO 连接成功，bucket 可正常读写"})
+}
+
+// listMinIOFiles 列出 MinIO bucket 中某摄像头（或全部）的录像对象
+// GET /minio/list?camera_id=11
+func (s *Server) listMinIOFiles(c *gin.Context) {
+	mn := s.currentMinIOSettings()
+	if !mn.Enabled || mn.Endpoint == "" || mn.Bucket == "" {
+		c.JSON(http.StatusOK, gin.H{"enabled": false, "files": []interface{}{}})
+		return
+	}
+
+	cameraID := strings.TrimSpace(c.Query("camera_id"))
+	prefix := strings.Trim(strings.TrimSpace(mn.BasePath), "/")
+	if cameraID != "" {
+		// 上传布局为 <base>/camera_<id>/xxx.mp4
+		prefix = "camera_" + cameraID
+		if b := strings.Trim(mn.BasePath, "/"); b != "" {
+			prefix = b + "/" + prefix
+		}
+	}
+	if prefix != "" {
+		prefix += "/"
+	}
+
+	client, err := minio.NewClient(mn.Endpoint, mn.AccessKey, mn.SecretKey, mn.Bucket, mn.UseSSL)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "创建 MinIO 客户端失败: " + err.Error()})
+		return
+	}
+	entries, err := client.List(prefix)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "读取 MinIO 对象失败: " + err.Error()})
+		return
+	}
+
+	type minioFileItem struct {
+		Name    string    `json:"name"`
+		Path    string    `json:"path"`
+		Size    int64     `json:"size"`
+		ModTime time.Time `json:"mod_time"`
+	}
+	var files []minioFileItem
+	for _, e := range entries {
+		if !strings.HasSuffix(strings.ToLower(e.Key), ".mp4") {
+			continue
+		}
+		files = append(files, minioFileItem{
+			Name:    filepath.Base(e.Key),
+			Path:    e.Key,
+			Size:    e.Size,
+			ModTime: e.ModTime,
+		})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].ModTime.After(files[j].ModTime) })
+	if files == nil {
+		files = []minioFileItem{}
+	}
+	c.JSON(http.StatusOK, gin.H{"enabled": true, "camera_id": cameraID, "files": files})
+}
+
+// streamMinIOFile 将 MinIO 上的录像对象流式代理给浏览器（支持 Range 拖动进度）
+// GET /minio/file?path=surveillance/camera_11/segment_xxx.mp4
+func (s *Server) streamMinIOFile(c *gin.Context) {
+	mn := s.currentMinIOSettings()
+	if !mn.Enabled || mn.Endpoint == "" || mn.Bucket == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "MinIO 未启用"})
+		return
+	}
+	key := c.Query("path")
+	if err := validateWebdavRelPath(mn.BasePath, key); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	client, err := minio.NewClient(mn.Endpoint, mn.AccessKey, mn.SecretKey, mn.Bucket, mn.UseSSL)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "创建 MinIO 客户端失败: " + err.Error()})
+		return
+	}
+	res, err := client.Get(c.Request.Context(), key, c.GetHeader("Range"))
+	if err != nil {
+		if isMinioNoSuchKey(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "MinIO 上不存在该文件"})
+			return
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": "读取 MinIO 文件失败: " + err.Error()})
+		return
+	}
+	defer res.Body.Close()
+
+	c.Status(http.StatusOK)
+	if res.Start > 0 || res.End < res.TotalSize-1 {
+		c.Status(http.StatusPartialContent)
+		c.Header("Content-Range", fmt.Sprintf("bytes %d-%d/%d", res.Start, res.End, res.TotalSize))
+	}
+	c.Header("Content-Type", "video/mp4")
+	c.Header("Content-Length", strconv.FormatInt(res.End-res.Start+1, 10))
+	c.Header("Accept-Ranges", "bytes")
+	c.Header("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", filepath.Base(key)))
+	io.Copy(c.Writer, res.Body)
 }
 
 // persistConfig 将当前配置写回 config.yaml
@@ -1824,6 +2007,36 @@ func (s *Server) getRecordingFile(c *gin.Context) {
 					}
 				} else {
 					logrus.Warnf("WebDAV 回退播放失败 id=%d: %v", id, gerr)
+				}
+			}
+		}
+
+		// WebDAV 不可用/未命中 → 尝试 MinIO 回退
+		if mn := s.currentMinIOSettings(); mn.Enabled && mn.Endpoint != "" && mn.Bucket != "" {
+			if err := validateWebdavRelPath(mn.BasePath, rec.StoragePath); err == nil {
+				mc, merr := minio.NewClient(mn.Endpoint, mn.AccessKey, mn.SecretKey, mn.Bucket, mn.UseSSL)
+				if merr == nil {
+					res, gerr := mc.Get(c.Request.Context(), rec.StoragePath, c.GetHeader("Range"))
+					if gerr == nil {
+						defer res.Body.Close()
+						if res.Start > 0 || res.End < res.TotalSize-1 {
+							c.Status(http.StatusPartialContent)
+							c.Header("Content-Range", fmt.Sprintf("bytes %d-%d/%d", res.Start, res.End, res.TotalSize))
+						} else {
+							c.Status(http.StatusOK)
+						}
+						c.Header("Content-Type", "video/mp4")
+						c.Header("Content-Length", strconv.FormatInt(res.End-res.Start+1, 10))
+						c.Header("Accept-Ranges", "bytes")
+						io.Copy(c.Writer, res.Body)
+						return
+					}
+					if !isMinioNoSuchKey(gerr) {
+						c.JSON(http.StatusBadGateway, gin.H{"error": "MinIO 读取录像失败"})
+						return
+					}
+				} else {
+					logrus.Warnf("MinIO 回退播放失败 id=%d: %v", id, merr)
 				}
 			}
 		}

@@ -109,6 +109,24 @@ const routes: RouteRecordRaw[] = [
             meta: { title: '系统配置' },
           },
           {
+            path: 'camera-defaults',
+            name: 'CameraDefaults',
+            component: () => import('@/views/settings/CameraDefaults.vue'),
+            meta: { title: '摄像头默认配置' },
+          },
+          {
+            path: 'storage',
+            name: 'StorageSettings',
+            component: () => import('@/views/settings/Storage.vue'),
+            meta: { title: '存储设置' },
+          },
+          {
+            path: 'maintenance',
+            name: 'SystemMaintenance',
+            component: () => import('@/views/settings/Maintenance.vue'),
+            meta: { title: '系统维护' },
+          },
+          {
             path: 'alerts',
             name: 'AlertConfig',
             component: () => import('@/views/settings/Alerts.vue'),

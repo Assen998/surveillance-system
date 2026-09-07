@@ -17,6 +17,7 @@ import (
 	"github.com/yourorg/surveillance-system/internal/models"
 	"github.com/yourorg/surveillance-system/internal/storage"
 	"github.com/yourorg/surveillance-system/pkg/ffmpeg"
+	"github.com/yourorg/surveillance-system/pkg/minio"
 	"github.com/yourorg/surveillance-system/pkg/onvif"
 	"github.com/yourorg/surveillance-system/pkg/webdav"
 	"github.com/sirupsen/logrus"
@@ -141,6 +142,14 @@ func (m *CameraManager) webdavConfig() config.WebdavConfig {
 		return m.runtimeStorage.GetWebdav()
 	}
 	return m.cfg.Storage.Webdav
+}
+
+// minioConfig 返回当前生效的 MinIO 配置
+func (m *CameraManager) minioConfig() config.MinIOConfig {
+	if m.runtimeStorage != nil {
+		return m.runtimeStorage.GetMinIO()
+	}
+	return m.cfg.Storage.MinIO
 }
 
 // Start 启动管理器
@@ -625,6 +634,11 @@ func (m *CameraManager) runMotionRecording(inst *CameraInstance, rtspURL string,
 		remoteRel := fmt.Sprintf("camera_%d/%s", cam.ID, filename)
 		go m.uploadSegmentToWebdav(recording.ID, cam.ID, outPath, wd, remoteRel)
 	}
+	// MinIO 开启时异步上传
+	if mn := m.minioConfig(); mn.Enabled && mn.Endpoint != "" && mn.Bucket != "" {
+		remoteRel := fmt.Sprintf("camera_%d/%s", cam.ID, filename)
+		go m.uploadSegmentToMinio(recording.ID, cam.ID, outPath, mn, remoteRel)
+	}
 }
 
 // tailString 截取字符串尾部 n 字节（用于日志，避免刷屏）
@@ -690,6 +704,11 @@ func (m *CameraManager) onSegmentComplete(cameraID uint, segment *ffmpeg.Segment
 		remoteRel := fmt.Sprintf("camera_%d/%s", cameraID, filepath.Base(segment.FilePath))
 		go m.uploadSegmentToWebdav(recording.ID, cameraID, segment.FilePath, wd, remoteRel)
 	}
+	// MinIO 开启时异步上传该分段
+	if mn := m.minioConfig(); mn.Enabled && mn.Endpoint != "" && mn.Bucket != "" {
+		remoteRel := fmt.Sprintf("camera_%d/%s", cameraID, filepath.Base(segment.FilePath))
+		go m.uploadSegmentToMinio(recording.ID, cameraID, segment.FilePath, mn, remoteRel)
+	}
 }
 
 // uploadSegmentToWebdav 上传分段到 WebDAV，成功后回写录像记录的远程路径
@@ -727,6 +746,57 @@ func (m *CameraManager) uploadSegmentToWebdav(recordingID uint, cameraID uint, l
 		return
 	}
 	logrus.Errorf("WebDAV 上传失败（已重试 3 次）: camera=%d file=%s err=%v", cameraID, filepath.Base(localPath), lastErr)
+}
+
+// uploadSegmentToMinio 上传分段到 MinIO（S3 兼容对象存储），成功后回写录像记录的远程路径。
+// 对象键布局与 WebDAV 一致：{base}/camera_{id}/xxx.mp4。
+func (m *CameraManager) uploadSegmentToMinio(recordingID uint, cameraID uint, localPath string, mn config.MinIOConfig, remoteRel string) {
+	client, err := minio.NewClient(mn.Endpoint, mn.AccessKey, mn.SecretKey, mn.Bucket, mn.UseSSL)
+	if err != nil {
+		logrus.Errorf("MinIO 创建客户端失败: camera=%d err=%v", cameraID, err)
+		return
+	}
+	objectKey := mn.BasePath
+	if objectKey != "" {
+		objectKey = strings.Trim(objectKey, "/") + "/" + remoteRel
+	} else {
+		objectKey = remoteRel
+	}
+
+	// 最多重试 3 次
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if err := client.Upload(localPath, objectKey); err != nil {
+			lastErr = err
+			logrus.Warnf("MinIO 上传重试 %d/3: camera=%d file=%s err=%v", attempt, cameraID, filepath.Base(localPath), err)
+			time.Sleep(time.Duration(attempt*10) * time.Second)
+			continue
+		}
+		// 上传成功，回写远程路径（仅当仍指向本地时，避免与 WebDAV 上传互相覆盖）
+		res := m.db.Model(&models.Recording{}).
+			Where("id = ? AND storage_path = ?", recordingID, localPath).
+			Update("storage_path", objectKey)
+		if res.Error != nil {
+			logrus.Warnf("MinIO 回写 storage_path 失败 id=%d: %v", recordingID, res.Error)
+		} else {
+			logrus.Infof("MinIO 上传成功: camera=%d -> %s/%s", cameraID, mn.Bucket, objectKey)
+		}
+
+		// MinIO 独占模式：上传成功后删除本地副本，本地仅作临时缓冲。
+		// 若 WebDAV 也处于独占模式则不删（避免两个远端竞争删除本地缓冲）。
+		if mn.Only {
+			wd := m.webdavConfig()
+			if !(wd.Enabled && wd.Only) {
+				if err := os.Remove(localPath); err == nil {
+					logrus.Infof("MinIO 独占模式: 已删除本地副本 %s", localPath)
+				} else if !os.IsNotExist(err) {
+					logrus.Warnf("MinIO 独占模式: 删除本地副本失败 %s: %v", localPath, err)
+				}
+			}
+		}
+		return
+	}
+	logrus.Errorf("MinIO 上传失败（已重试 3 次）: camera=%d file=%s err=%v", cameraID, filepath.Base(localPath), lastErr)
 }
 
 // getCameraStoragePath 获取摄像头存储路径

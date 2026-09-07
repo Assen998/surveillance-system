@@ -35,6 +35,10 @@ storage:
         secret_key: minioadmin
         bucket: surveillance
         use_ssl: false
+        base_path: surveillance
+        max_days: 30
+        max_storage_gb: 0
+        only: false
     webdav:
         enabled: true
         url: http://127.0.0.1:5244/dav

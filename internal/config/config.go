@@ -98,12 +98,22 @@ type WebdavConfig struct {
 }
 
 type MinIOConfig struct {
-	Enabled    bool   `mapstructure:"enabled" yaml:"enabled"`
-	Endpoint   string `mapstructure:"endpoint" yaml:"endpoint"`
-	AccessKey  string `mapstructure:"access_key" yaml:"access_key"`
-	SecretKey  string `mapstructure:"secret_key" yaml:"secret_key"`
-	Bucket     string `mapstructure:"bucket" yaml:"bucket"`
-	UseSSL     bool   `mapstructure:"use_ssl" yaml:"use_ssl"`
+	Enabled    bool   `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+	Endpoint   string `mapstructure:"endpoint" yaml:"endpoint" json:"endpoint"` // host:port
+	AccessKey  string `mapstructure:"access_key" yaml:"access_key" json:"access_key"`
+	SecretKey  string `mapstructure:"secret_key" yaml:"secret_key" json:"secret_key"`
+	Bucket     string `mapstructure:"bucket" yaml:"bucket" json:"bucket"`
+	UseSSL     bool   `mapstructure:"use_ssl" yaml:"use_ssl" json:"use_ssl"`
+	// BasePath Bucket 内的根前缀（录像对象键为 {base}/camera_{id}/xxx.mp4）
+	BasePath string `mapstructure:"base_path" yaml:"base_path" json:"base_path"`
+	// MaxDays 远程保留天数（独立于本地保留）；0 = 不按时间自动删除
+	MaxDays int `mapstructure:"max_days" yaml:"max_days" json:"max_days"`
+	// MaxStorageGB 远程占用上限（GB）；0 = 不限制；超限时从最旧录像开始删除
+	MaxStorageGB float64 `mapstructure:"max_storage_gb" yaml:"max_storage_gb" json:"max_storage_gb"`
+	// Only MinIO 独占模式：true 时录像上传成功后立即删除本地副本，
+	// 本地仅作为上传前的临时缓冲（上传失败则保留本地文件防丢失）。
+	// 旧录像回放自动走 MinIO 流式播放。
+	Only bool `mapstructure:"only" yaml:"only" json:"only"`
 }
 
 type CameraConfig struct {

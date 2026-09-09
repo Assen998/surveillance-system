@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -144,9 +143,7 @@ func (s *Server) runEnvChecks() EnvReport {
 	}
 
 	// 6. 磁盘空间（录像所在分区）
-	var st syscall.Statfs_t
-	if err := syscall.Statfs(recRoot, &st); err == nil {
-		free := int64(st.Bavail) * int64(st.Bsize)
+	if free, err := diskFreeBytes(recRoot); err == nil {
 		const gb = 1024 * 1024 * 1024
 		switch {
 		case free < 500*1024*1024:

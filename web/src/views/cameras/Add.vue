@@ -9,13 +9,14 @@
     <el-card :shadow="never">
       <el-form :model="cameraForm" :rules="cameraRules" ref="cameraFormRef" label-width="120">
         
-        <!-- 协议选择：ONVIF 自动发现 / RTSP 手动粘贴 -->
+        <!-- 协议选择：ONVIF 自动发现 / RTSP 手动粘贴；编辑时锁定（不支持更换连接方式） -->
         <el-form-item label="连接方式" prop="protocol">
-          <el-radio-group v-model="cameraForm.protocol" style="display: flex; gap: 16px;">
+          <el-radio-group v-model="cameraForm.protocol" :disabled="isEditMode" style="display: flex; gap: 16px;">
             <el-radio value="onvif">ONVIF 自动发现（推荐）</el-radio>
             <el-radio value="rtsp">RTSP 流地址</el-radio>
           </el-radio-group>
-          <p class="form-hint" v-if="!isRtspMode">填写 IP、用户名、密码后自动发现设备并获取流地址</p>
+          <p class="form-hint" v-if="isEditMode">连接方式在添加时确定，不可更换；如需更换请删除该摄像头后重新添加</p>
+          <p class="form-hint" v-else-if="!isRtspMode">填写 IP、用户名、密码后自动发现设备并获取流地址</p>
           <p class="form-hint" v-else>直接粘贴可正常播放的完整 RTSP 地址（含账号密码），保存前自动实测连通性</p>
         </el-form-item>
 
@@ -232,9 +233,6 @@ const cameraForm = reactive({
   record_schedule: '0-23',
 })
 
-// 编辑模式加载的摄像头原始数据（切换连接方式时用于拼装 RTSP 地址预填）
-const loadedCamera = ref<any>(null)
-
 // 探测到的设备信息
 const detectedDevice = ref<{
   ip: string
@@ -278,7 +276,6 @@ const loadCameraForEdit = async () => {
       goBack()
       return
     }
-    loadedCamera.value = c
     // 预填表单（密码留空 = 保存时不修改）
     cameraForm.name = c.name || ''
     cameraForm.description = c.description || ''
@@ -482,13 +479,6 @@ watch(() => cameraForm.onvif_profile_token, (newToken) => {
     cameraForm.codec = p.codec || 'h264'
     cameraForm.bitrate = p.bitrate || 4096
     if (p.rtspUri) cameraForm.path = p.rtspUri
-  }
-})
-
-// 编辑模式切换连接方式：切到 RTSP 时用现有字段拼装流地址预填（不覆盖用户已修改的 URL）
-watch(() => cameraForm.protocol, (val) => {
-  if (val === 'rtsp' && loadedCamera.value && !cameraForm.rtsp_url) {
-    cameraForm.rtsp_url = buildRtspUrl(loadedCamera.value)
   }
 })
 

@@ -64,16 +64,23 @@
       <el-main class="main-content">
         <router-view />
       </el-main>
+
+      <el-footer class="app-footer" height="36px">
+        <span class="footer-item">监控录像系统<b v-if="version" class="footer-version"> v{{ version }}</b></span>
+        <a class="footer-item footer-link" href="https://github.com/Assen998/surveillance-system" target="_blank" rel="noopener noreferrer">
+          <el-icon><Link /></el-icon> github.com/Assen998/surveillance-system
+        </a>
+      </el-footer>
     </el-container>
   </el-container>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   VideoCamera, Folder, Monitor, Film, Cpu, Memo, Setting,
-  Menu, Fold, Expand, User, ArrowDown, SwitchButton
+  Menu, Fold, Expand, User, ArrowDown, SwitchButton, Link
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -81,6 +88,18 @@ const route = useRoute()
 
 const isCollapse = ref(false)
 const userName = 'admin'
+
+// 页脚版本号（/api/version 不受 JWT 保护）
+const version = ref('')
+onMounted(async () => {
+  try {
+    const res = await fetch('/api/version')
+    const d = await res.json()
+    version.value = d?.version || ''
+  } catch (e) {
+    // 版本获取失败不影响主界面
+  }
+})
 
 const toggleCollapse = () => {
   isCollapse.value = !isCollapse.value
@@ -277,7 +296,37 @@ const logout = () => {
 .main-content {
   padding: 24px;
   background: #f0f2f5;
-  min-height: calc(100vh - 60px);
+  min-height: calc(100vh - 60px - 36px);
   overflow-y: auto;
+}
+
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  background: #fff;
+  border-top: 1px solid #e6e9ed;
+  font-size: 12px;
+  color: #909399;
+  flex-shrink: 0;
+
+  .footer-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .footer-version {
+    color: #409eff;
+    margin-left: 2px;
+  }
+  .footer-link {
+    color: #606266;
+    text-decoration: none;
+
+    &:hover {
+      color: #409eff;
+    }
+  }
 }
 </style>

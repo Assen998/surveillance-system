@@ -29,9 +29,8 @@ type StreamOptions struct {
 	OutputDir      string
 	OnSegment      func(cameraID uint, segment *SegmentInfo)
 	OnError        func(error)
-	// NoRecord 纯预览模式：不输出 MP4 录像分段，仅输出 HLS 预览。
-	// 用于 RecordType=motion 的事件型录像（平时不录，移动触发时另起临时录像进程）。
-	// 注意：拆分后该模式已不再使用常驻预览流；保留字段以兼容旧调用，新代码走 PreviewStream。
+	// NoRecord 纯预览模式：不输出 MP4 录像分段，仅输出 HLS 预览
+	// （当前默认不使用，预览由独立 PreviewStream 承担）
 	NoRecord bool
 	// RecordOnly 纯录像模式：仅输出 MP4 分段录像（-c copy 主码流），
 	// 不内嵌 HLS 预览输出。预览由独立的 PreviewStream（子码流、按需启动）承担。

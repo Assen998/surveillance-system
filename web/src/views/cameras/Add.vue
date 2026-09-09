@@ -197,7 +197,7 @@ const loadedRecordEnabled = ref(true) // 编辑加载时的录像开关（判断
 // 当前是否 RTSP 手动模式
 const isRtspMode = computed(() => cameraForm.protocol === 'rtsp')
 
-// 由摄像头字段拼装 RTSP 完整地址（编辑模式切到 RTSP 时预填；密码不回显，不拼入）
+// 由摄像头字段拼装 RTSP 完整地址（编辑模式加载时预填；密码不回显，不拼入）
 const buildRtspUrl = (c: any) => {
   if (!c) return ''
   const port = c.port || 554

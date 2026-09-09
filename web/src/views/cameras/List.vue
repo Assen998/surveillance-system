@@ -196,7 +196,7 @@
       </template>
     </el-dialog>
 
-    <!-- 添加/编辑对话框 - 简化版 ONVIF 优先设计 -->
+    <!-- 添加摄像头对话框：ONVIF 自动发现 / RTSP 流地址 -->
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="640" destroy-on-close>
       <el-form :model="cameraForm" :rules="cameraRules" ref="cameraFormRef" label-width="120">
         
@@ -380,7 +380,7 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 
-// 新增：探测状态
+// 探测状态
 const detectedDevice = ref<any>(null)
 const detectLoading = ref(false)
 const detectError = ref('')
@@ -519,7 +519,7 @@ const handleRowClick = (row: any) => {
 
 const formatTime = (time: string) => time ? new Date(time).toLocaleString('zh-CN') : '-'
 
-// ========== 新增：探测相关辅助函数 (与 Add.vue 保持一致) ==========
+// ========== 探测相关辅助函数 ==========
 
 // 当前选中的 Profile
 const selectedProfile = computed(() => {

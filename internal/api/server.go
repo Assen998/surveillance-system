@@ -3257,7 +3257,6 @@ func (s *Server) handleWSMessage(conn *websocket.Conn, msg map[string]interface{
 			conn.WriteJSON(gin.H{"type": "subscribed", "camera_id": uint(camID)})
 		}
 	case "unsubscribe_camera":
-		// TODO
 	}
 }
 

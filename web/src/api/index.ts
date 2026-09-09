@@ -183,6 +183,13 @@ export const api = {
     },
   },
 
+  // 首次设置（公开接口）
+  setup: {
+    status: () => request.get('/setup/status'),
+    create: (data: { username: string; password: string }) =>
+      request.post('/setup', data),
+  },
+
   // 报警配置
   alerts: {
     config: () => request.get('/alerts/config'),
@@ -196,6 +203,8 @@ export const api = {
     updateConfig: (data: any) => request.put('/system/config', data),
     info: () => request.get('/system/info'),
     restart: () => request.post('/system/restart'),
+    // 运行环境检测
+    envCheck: () => request.get('/system/env'),
     // 日志
     logTail: (params: { lines?: number; keyword?: string }) =>
       request.get('/system/logs', { params }),

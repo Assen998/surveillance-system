@@ -38,7 +38,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { VideoCamera, User, Lock } from '@element-plus/icons-vue'
@@ -75,6 +75,19 @@ const handleLogin = async () => {
     loading.value = false
   }
 }
+
+// 首次运行（尚无管理员账户）→ 跳转到初始化设置页
+onMounted(async () => {
+  try {
+    const res: any = await api.setup.status()
+    if (res?.need_setup) {
+      router.replace('/setup')
+    }
+  } catch (e) {
+    // 接口不可用时停留在登录页（可能是旧版本后端，无 /setup 路由）
+    console.warn('setup status check failed', e)
+  }
+})
 </script>
 
 <style scoped lang="scss">

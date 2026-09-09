@@ -57,6 +57,15 @@ func (c *Client) newRequest(method, remotePath string, body io.Reader) (*http.Re
 // Check 检查 WebDAV 服务器连通性与凭据（PROPFIND 基础路径）
 // 返回 error：401/403 凭据错误；网络错误；其他 HTTP 错误
 func (c *Client) Check(basePath string) error {
+	return c.check(basePath, 60*time.Second)
+}
+
+// CheckWithTimeout 同 Check，可自定义超时（环境检测等快速探测场景）
+func (c *Client) CheckWithTimeout(basePath string, timeout time.Duration) error {
+	return c.check(basePath, timeout)
+}
+
+func (c *Client) check(basePath string, timeout time.Duration) error {
 	if c.baseURL == "" {
 		return fmt.Errorf("WebDAV URL 未配置")
 	}
@@ -76,7 +85,9 @@ func (c *Client) Check(basePath string) error {
 	req.Header.Set("Depth", "0")
 	req.Header.Set("Content-Type", "application/xml")
 
-	resp, err := c.http.Do(req)
+	client := *c.http
+	client.Timeout = timeout
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("无法连接 WebDAV 服务器: %w", err)
 	}

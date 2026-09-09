@@ -8,6 +8,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '登录', hideInMenu: true },
   },
   {
+    path: '/setup',
+    name: 'Setup',
+    component: () => import('@/views/Setup.vue'),
+    meta: { title: '首次设置', hideInMenu: true },
+  },
+  {
     path: '/',
     component: () => import('@/layouts/MainLayout.vue'),
     redirect: '/dashboard',
@@ -156,7 +162,7 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   document.title = `${to.meta.title || '监控系统'} - 监控录像系统`
   const token = localStorage.getItem('token')
-  if (to.path !== '/login' && !token) {
+  if (to.path !== '/login' && to.path !== '/setup' && !token) {
     next('/login')
   } else {
     next()

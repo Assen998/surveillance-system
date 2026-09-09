@@ -151,6 +151,10 @@ func (s *Server) setupRoutes() {
 			auth.PUT("/password", s.authMiddleware(), s.changePassword)
 		}
 
+		// 首次设置接口（公开；创建管理员后自动失效）
+		v1.GET("/setup/status", s.getSetupStatus)
+		v1.POST("/setup", s.postSetup)
+
 		// 受保护的 API 组
 		secured := v1.Group("")
 		secured.Use(s.authMiddleware())
@@ -250,6 +254,9 @@ func (s *Server) setupRoutes() {
 				system.PUT("/config", s.updateSystemConfig)
 				system.GET("/info", s.getSystemInfo)
 				system.POST("/restart", s.restartSystem)
+
+				// 运行环境检测（与首次设置页同一逻辑）
+				system.GET("/env", s.getEnvCheck)
 
 				// 日志
 				system.GET("/logs", s.getLogTail)

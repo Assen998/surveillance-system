@@ -16,13 +16,23 @@ import (
 
 var DB *gorm.DB
 
+// FirstRun 标记本次启动是否为全新安装（数据库文件此前不存在）。
+// 全新安装不自动创建 admin/admin123，改由 Web 首次设置页由用户自行设定账户，
+// 避免默认弱口令直接暴露。是否仍需设置以「管理员用户数 == 0」为权威依据
+// （见 api 层 needSetup），FirstRun 仅用于启动日志与跳过自动种子。
+var FirstRun bool
+
 func Init(cfg *config.Config) error {
 	var dialector gorm.Dialector
 
 	switch cfg.Database.Type {
 	case "sqlite":
-		// 确保目录存在
+		// 全新安装检测：数据库文件是否已存在（必须在 MkdirAll/Open 之前判断）
 		dbPath := cfg.Database.SQLite.Path
+		if _, statErr := os.Stat(dbPath); statErr != nil {
+			FirstRun = true
+		}
+		// 确保目录存在
 		dir := filepath.Dir(dbPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("创建数据库目录失败: %w", err)
@@ -68,7 +78,11 @@ func Init(cfg *config.Config) error {
 	}
 
 	// 初始化默认数据
-	if err := initDefaultData(); err != nil {
+	// 全新安装（FirstRun）不自动创建 admin/admin123，改由 Web 首次设置页设定，
+	// 避免默认弱口令直接暴露。已有数据库仍保留原有种子/占位密码修复逻辑。
+	if FirstRun {
+		logrus.Info("检测到全新安装：跳过默认管理员创建，请在 Web 首次设置页创建管理员账户")
+	} else if err := initDefaultData(); err != nil {
 		logrus.Warnf("初始化默认数据失败: %v", err)
 	}
 

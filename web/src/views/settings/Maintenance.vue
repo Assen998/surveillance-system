@@ -47,6 +47,18 @@
     <el-card :shadow="never" class="mt-16">
       <template #header>
         <div class="card-header">
+          <h3>运行环境检测</h3>
+          <el-button size="small" :loading="envLoading" @click="loadEnv">
+            <el-icon v-if="!envLoading"><Refresh /></el-icon> 运行环境检测
+          </el-button>
+        </div>
+      </template>
+      <EnvCheckTable :report="envReport" :loading="envLoading" />
+    </el-card>
+
+    <el-card :shadow="never" class="mt-16">
+      <template #header>
+        <div class="card-header">
           <h3>数据库备份</h3>
           <el-button size="small" @click="loadBackups"><el-icon><Refresh /></el-icon></el-button>
         </div>
@@ -128,11 +140,27 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Download, Delete, Search, Upload } from '@element-plus/icons-vue'
 import { api } from '@/api'
+import EnvCheckTable from '@/components/EnvCheckTable.vue'
 
 const restartLoading = ref(false)
 const backupLoading = ref(false)
 const clearLogsLoading = ref(false)
 const sysInfo = ref<any>(null)
+
+// 运行环境检测
+const envReport = ref<any>(null)
+const envLoading = ref(false)
+const loadEnv = async () => {
+  envLoading.value = true
+  try {
+    envReport.value = await api.system.envCheck()
+  } catch (e) {
+    // 错误提示由响应拦截器统一处理
+    console.error(e)
+  } finally {
+    envLoading.value = false
+  }
+}
 
 // 程序更新
 const updateChecking = ref(false)
@@ -328,6 +356,7 @@ const saveUpdateCfg = async () => {
 onMounted(() => {
   viewSystemInfo()
   loadBackups(); loadLogFiles(); loadLogTail(); loadUpdateCfg()
+  loadEnv()
   logTimer = setInterval(() => { if (logAutoRefresh.value) loadLogTail() }, 5000)
 })
 onUnmounted(() => { if (logTimer) clearInterval(logTimer) })

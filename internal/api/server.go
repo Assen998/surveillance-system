@@ -910,6 +910,13 @@ func (s *Server) createCamera(c *gin.Context) {
 
 	cam := req.toModel()
 
+	// RTSP 摄像头无 ONVIF 事件上报，移动侦测录像永远不会触发（事件型模式无事件即无录像），
+	// 禁止创建 rtsp+motion 组合
+	if cam.Protocol == "rtsp" && cam.RecordType == "motion" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "RTSP 摄像头不支持移动侦测录像（依赖 ONVIF 事件上报），请选择连续录像或定时录像"})
+		return
+	}
+
 	// RTSP/ONVIF 不需要 device_id，避免唯一索引冲突
 	if cam.Protocol != "gb28181" && (cam.DeviceID == nil || *cam.DeviceID == "") {
 		cam.DeviceID = nil

@@ -337,9 +337,10 @@
           <el-form-item label="录像类型" prop="record_type">
             <el-select v-model="cameraForm.record_type" placeholder="选择类型" style="width: 200px">
               <el-option label="连续录像 (7×24h)" value="continuous" />
-              <el-option label="移动侦测录像" value="motion" />
+              <el-option v-if="!isRtspMode" label="移动侦测录像" value="motion" />
               <el-option label="定时录像" value="schedule" />
             </el-select>
+            <p class="form-hint" v-if="isRtspMode">移动侦测依赖 ONVIF 事件上报，RTSP 流不支持，故仅提供连续/定时录像</p>
           </el-form-item>
 
           <el-form-item label="录像计划" prop="record_schedule" v-if="cameraForm.record_type === 'schedule'">

@@ -273,7 +273,7 @@ update:
 1. 摄像头管理 → 添加摄像头 → 选择「RTSP 流地址」
 2. 填写名称，粘贴**可正常播放的完整 RTSP 地址**（含账号密码），例如海康威视主码流：
    ```
-   rtsp://admin:sd123456@192.168.1.64:554/Streaming/Channels/101?transportmode=unicast
+   rtsp://admin:admin@192.168.1.64:554/Streaming/Channels/101?transportmode=unicast
    ```
    子码流将 `101` 改为 `102`；无账号密码的流直接填 `rtsp://IP:端口/路径`
 3. 保存时后端自动 ffprobe 实测连通性，不通会明确报错，不会存入连不上的摄像头

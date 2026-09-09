@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1542,7 +1543,8 @@ func injectRTSPAuth(rtspURL, username, password string) string {
 func BuildRTSPURL(c *models.Camera) string {
 	auth := ""
 	if c.Username != "" && c.Password != "" {
-		auth = fmt.Sprintf("%s:%s@", c.Username, c.Password)
+		// url.UserPassword 自动转义账号密码中的特殊字符（如 @ : / 等）
+		auth = url.UserPassword(c.Username, c.Password).String() + "@"
 	}
 	path := c.Path
 	if path == "" {

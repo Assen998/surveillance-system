@@ -56,29 +56,6 @@
         </el-form-item>
       </el-form>
     </el-card>
-
-    <el-card :shadow="never" class="mt-16">
-      <template #header>
-        <h3>{{ t('settingsSystem.redisSettings') }}</h3>
-</template>
-      <el-form :model="redisForm" label-width="140">
-        <el-form-item :label="t('settingsSystem.host')">
-          <el-input v-model="redisForm.host" placeholder="localhost" style="width: 300px" />
-        </el-form-item>
-        <el-form-item :label="t('settingsSystem.port')">
-          <el-input-number v-model="redisForm.port" :min="1" :max="65535" :controls="false" style="width: 120px" />
-        </el-form-item>
-        <el-form-item :label="t('settingsSystem.password')">
-          <el-input v-model="redisForm.password" type="password" show-password :placeholder="t('settingsSystem.noPasswordHint')" style="width: 300px" />
-        </el-form-item>
-        <el-form-item :label="t('settingsSystem.dbNumber')">
-          <el-input-number v-model="redisForm.db" :min="0" :max="15" :controls="false" style="width: 120px" />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="saveRedisConfig"><el-icon><Check /></el-icon> {{ t('settingsSystem.save') }}</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
   </div>
 </template>
 
@@ -105,25 +82,16 @@ const dbForm = reactive({
   pg_host: '',
 })
 
-const redisForm = reactive({
-  host: 'localhost',
-  port: 6379,
-  password: '',
-  db: 0,
-})
-
 const loadSystemConfig = async () => {
   try {
     const res: any = await api.system.config()
     Object.assign(systemForm, res.server || {})
     Object.assign(dbForm, res.database || {})
-    Object.assign(redisForm, res.redis || {})
   } catch (e) { console.error(e) }
 }
 
 const saveSystemConfig = async () => { try { await api.system.updateConfig({ server: systemForm }); ElMessage.success(t('settingsSystem.saveSuccess')) } catch(e) { ElMessage.error(t('settingsSystem.saveFailed')) } }
 const saveDbConfig = async () => { ElMessage.success(t('settingsSystem.dbSaveSuccess')) }
-const saveRedisConfig = async () => { ElMessage.success(t('settingsSystem.redisSaveSuccess')) }
 
 onMounted(() => {
   loadSystemConfig()

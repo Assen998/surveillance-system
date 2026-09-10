@@ -11,7 +11,6 @@ import (
 type Config struct {
 	Server   ServerConfig   `mapstructure:"server" yaml:"server"`
 	Database DatabaseConfig `mapstructure:"database" yaml:"database"`
-	Redis    RedisConfig    `mapstructure:"redis" yaml:"redis"`
 	Storage  StorageConfig  `mapstructure:"storage" yaml:"storage"`
 	Camera   CameraConfig   `mapstructure:"camera" yaml:"camera"`
 	Alert    AlertConfig    `mapstructure:"alert" yaml:"alert"`
@@ -56,13 +55,6 @@ type PostgresConfig struct {
 	Password string `mapstructure:"password" yaml:"password"`
 	DBName   string `mapstructure:"dbname" yaml:"dbname"`
 	SSLMode  string `mapstructure:"sslmode" yaml:"sslmode"`
-}
-
-type RedisConfig struct {
-	Host     string `mapstructure:"host" yaml:"host"`
-	Port     int    `mapstructure:"port" yaml:"port"`
-	Password string `mapstructure:"password" yaml:"password"`
-	DB       int    `mapstructure:"db" yaml:"db"`
 }
 
 type StorageConfig struct {

@@ -1,6 +1,6 @@
 <template>
   <div class="dashboard">
-    <!-- 统计卡片 -->
+
     <el-row :gutter="24" class="mb-24">
       <el-col :xs="24" :sm="12" :lg="6" v-for="card in statCards" :key="card.key">
         <el-card :shadow="never" class="stat-card" :class="card.key">
@@ -18,58 +18,58 @@
               <ArrowUp v-if="card.trend >= 0" /><ArrowDown v-else />
             </el-icon>
             <span>{{ card.trend >= 0 ? '+' : '' }}{{ card.trend }}%</span>
-            <span class="trend-label">较上周</span>
+            <span class="trend-label">{{ t('dashboard.trendWeek') }}</span>
           </div>
         </el-card>
       </el-col>
     </el-row>
 
-    <!-- 主内容区 -->
+
     <el-row :gutter="24">
-      <!-- 摄像头状态总览 -->
+
       <el-col :xs="24" :lg="16">
         <el-card :shadow="never">
           <template #header>
             <div class="card-header">
-              <h3>摄像头实时状态</h3>
+              <h3>{{ t("dashboard.camerasTitle") }}</h3>
               <el-button size="small" type="primary" @click="refreshCameras" :loading="cameraLoading">
-                <el-icon><Refresh /></el-icon> 刷新
+                <el-icon><Refresh /></el-icon> {{ t("common.refresh") }}
               </el-button>
             </div>
-          </template>
+</template>
 
           <el-table :data="cameraTableData" border stripe size="small" style="width: 100%">
-            <el-table-column prop="name" label="摄像头名称" width="200" />
-            <el-table-column prop="ip" label="IP 地址" width="140" />
-            <el-table-column label="状态" width="100">
+            <el-table-column prop="name" :label="t('dashboard.colName')" width="200" />
+            <el-table-column prop="ip" :label="t('dashboard.colIp')" width="140" />
+            <el-table-column :label="t('dashboard.colStatus')" width="100">
               <template #default="scope">
                 <el-tag :class="['status-tag', scope.row.status]" size="small">
-                  {{ statusMap[scope.row.status] }}
+                  {{ t('dashboard.status' + scope.row.status) }}
                 </el-tag>
-              </template>
+</template>
             </el-table-column>
-            <el-table-column prop="width" label="分辨率" width="120">
+            <el-table-column prop="width" :label="t('dashboard.colResolution')" width="120">
               <template #default="scope">
                 {{ scope.row.width }}×{{ scope.row.height }}
-              </template>
+</template>
             </el-table-column>
-            <el-table-column label="录像" width="80">
+            <el-table-column :label="t('dashboard.colRecord')" width="80">
               <template #default="scope">
-                <el-tag v-if="scope.row.record_enabled" type="success" size="small">开启</el-tag>
-                <el-tag v-else type="info" size="small">关闭</el-tag>
-              </template>
+                <el-tag v-if="scope.row.record_enabled" type="success" size="small">{{ t("dashboard.recordOn") }}</el-tag>
+                <el-tag v-else type="info" size="small">{{ t("dashboard.recordOff") }}</el-tag>
+</template>
             </el-table-column>
-            <el-table-column label="操作" width="200">
+            <el-table-column :label="t('dashboard.colActions')" width="200">
               <template #default="scope">
                 <el-button-group size="small">
                   <el-button link type="primary" @click="goToDetail(scope.row.id)">
-                    <el-icon><Monitor /></el-icon> 预览
+                    <el-icon><Monitor /></el-icon> {{ t("dashboard.preview") }}
                   </el-button>
                   <el-button link @click="goToPlayback(scope.row.id)">
-                    <el-icon><Film /></el-icon> 回放
+                    <el-icon><Film /></el-icon> {{ t("dashboard.playback") }}
                   </el-button>
                 </el-button-group>
-              </template>
+</template>
             </el-table-column>
           </el-table>
         </el-card>
@@ -80,10 +80,10 @@
         <el-card :shadow="never">
           <template #header>
             <div class="card-header">
-              <h3>最近报警</h3>
-              <el-button size="small" link @click="goToAlerts">查看全部</el-button>
+              <h3>{{ t("dashboard.recentAlerts") }}</h3>
+              <el-button size="small" link @click="goToAlerts">{{ t("dashboard.viewAll") }}</el-button>
             </div>
-          </template>
+</template>
 
           <div class="alert-list" v-if="recentAlerts.length > 0">
             <div class="alert-item" v-for="alert in recentAlerts" :key="alert.id">
@@ -94,22 +94,22 @@
                 <p class="alert-message">{{ alert.message }}</p>
                 <p class="alert-meta">
                   <span>{{ formatTime(alert.created_at) }}</span>
-                  <el-tag :type="levelType(alert.level)" size="small">{{ alert.level }}</el-tag>
+                  <el-tag :type="levelType(alert.level)" size="small">{{ t("utils.alertLevel." + alert.level) }}</el-tag>
                 </p>
               </div>
             </div>
           </div>
           <div class="empty-state" v-else>
             <el-icon><Bell /></el-icon>
-            <p>暂无报警记录</p>
+            <p>{{ t("dashboard.noAlerts") }}</p>
           </div>
         </el-card>
 
         <!-- 存储概览 -->
         <el-card :shadow="never" class="mt-16">
           <template #header>
-            <h3>存储概览</h3>
-          </template>
+            <h3>{{ t("dashboard.storageTitle") }}</h3>
+</template>
 
           <div class="storage-overview" v-if="storageStats">
             <div class="storage-bar">
@@ -123,26 +123,26 @@
             </div>
             <div class="storage-details">
               <div class="detail-item">
-                <span class="detail-label">已用</span>
+                <span class="detail-label">{{ t("dashboard.storageUsed") }}</span>
                 <span class="detail-value">{{ storagePercent.toFixed(1) }}%</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">剩余</span>
+                <span class="detail-label">{{ t("dashboard.storageFree") }}</span>
                 <span class="detail-value">{{ formatBytes(storageStats.free_space) }}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">录像片段</span>
+                <span class="detail-label">{{ t("dashboard.storageSegments") }}</span>
                 <span class="detail-value">{{ storageStats.recording_count }}</span>
               </div>
               <div class="detail-item">
-                <span class="detail-label">抓拍图片</span>
+                <span class="detail-label">{{ t("dashboard.storageSnapshots") }}</span>
                 <span class="detail-value">{{ storageStats.snapshot_count }}</span>
               </div>
             </div>
           </div>
           <div class="empty-state" v-else>
             <el-icon><Memo /></el-icon>
-            <p>存储统计加载中...</p>
+            <p>{{ t("dashboard.storageLoading") }}</p>
           </div>
         </el-card>
       </el-col>
@@ -160,6 +160,9 @@ import {
 } from '@element-plus/icons-vue'
 import { api } from '@/api'
 import { useCameraStore, useAlertStore, useStorageStore } from '@/stores'
+import { useI18n } from 'vue-i18n'
+
+const { t, locale } = useI18n()
 
 const router = useRouter()
 const cameraStore = useCameraStore()
@@ -172,17 +175,12 @@ const recentAlerts = ref<any[]>([])
 const storageStats = ref<any>(null)
 
 const statCards = computed(() => [
-  { key: 'cameras', label: '摄像头总数', value: cameraStore.cameras.length, icon: VideoCamera, trend: 0 },
-  { key: 'online', label: '在线摄像头', value: cameraStore.onlineCount, icon: Monitor, trend: 0 },
-  { key: 'alerts', label: '今日报警', value: 0, icon: Warning, trend: 12 },
-  { key: 'storage', label: '存储使用率', value: storageStats.value ? ((storageStats.value.used_space / storageStats.value.total_space) * 100).toFixed(1) + '%' : '--', icon: Memo, trend: -5 },
+  { key: 'cameras', label: t('dashboard.statCameras'), value: cameraStore.cameras.length, icon: VideoCamera, trend: 0 },
+  { key: 'online', label: t('dashboard.statOnline'), value: cameraStore.onlineCount, icon: Monitor, trend: 0 },
+  { key: 'alerts', label: t('dashboard.statAlertsToday'), value: 0, icon: Warning, trend: 12 },
+  { key: 'storage', label: t('dashboard.statStorage'), value: storageStats.value ? ((storageStats.value.used_space / storageStats.value.total_space) * 100).toFixed(1) + '%' : '--', icon: Memo, trend: -5 },
 ])
 
-const statusMap = {
-  online: '在线',
-  offline: '离线',
-  error: '异常',
-}
 
 const levelType = (level: string) => {
   const map: Record<string, any> = {
@@ -195,7 +193,7 @@ const levelType = (level: string) => {
 }
 
 const formatTime = (time: string) => {
-  return new Date(time).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return new Date(time).toLocaleString(locale.value === 'en' ? 'en-US' : 'zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
 const formatBytes = (bytes: number) => {
@@ -222,7 +220,7 @@ const loadDashboardData = async () => {
   await cameraStore.fetchCameras()
   cameraTableData.value = cameraStore.cameras
 
-  // 最近报警
+
   try {
     const res = await api.analytics.alerts({ page: 1, page_size: 10 })
     recentAlerts.value = res.data || res || []
@@ -230,7 +228,7 @@ const loadDashboardData = async () => {
     console.error(e)
   }
 
-  // 存储统计
+
   await storageStore.fetchStats()
   storageStats.value = storageStore.stats
 }

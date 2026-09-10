@@ -19,7 +19,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// ========== 运行环境检测 ==========
 
 const (
 	envOK   = "ok"
@@ -27,19 +26,19 @@ const (
 	envFail = "fail"
 )
 
-// CheckItem 单项环境检测结果
+
 type CheckItem struct {
 	Name     string `json:"name"`
-	Status   string `json:"status"` // ok | warn | fail
+	Status   string `json:"status"`
 	Detail   string `json:"detail"`
-	Fix      string `json:"fix"`      // 修复建议（warn/fail 时展示）
-	Required bool   `json:"required"` // 关键项：fail 时阻止首次设置
+	Fix      string `json:"fix"`
+	Required bool   `json:"required"`
 }
 
-// EnvReport 环境检测报告
+
 type EnvReport struct {
-	OK         bool        `json:"ok"`          // 全部通过（无 fail/warn）
-	CriticalOK bool        `json:"critical_ok"` // 关键项全部通过（无关键 fail）
+	OK         bool        `json:"ok"`
+	CriticalOK bool        `json:"critical_ok"`
 	Checks     []CheckItem `json:"checks"`
 }
 
@@ -58,12 +57,12 @@ func (r *EnvReport) compute() {
 	}
 }
 
-// runEnvChecks 执行全部环境检测
+
 func (s *Server) runEnvChecks() EnvReport {
 	var report EnvReport
 	report.Checks = []CheckItem{}
 
-	// 1. ffmpeg（关键：拉流/录像/预览全部依赖）
+
 	if v, err := runVersionCmd("ffmpeg"); err != nil {
 		report.Checks = append(report.Checks, CheckItem{
 			Name: "ffmpeg", Status: envFail, Required: true,
@@ -78,7 +77,7 @@ func (s *Server) runEnvChecks() EnvReport {
 		})
 	}
 
-	// 2. ffprobe（关键：摄像头连接测试/流探测）
+
 	if v, err := runVersionCmd("ffprobe"); err != nil {
 		report.Checks = append(report.Checks, CheckItem{
 			Name: "ffprobe", Status: envFail, Required: true,
@@ -91,7 +90,7 @@ func (s *Server) runEnvChecks() EnvReport {
 		})
 	}
 
-	// 3. 数据库目录可写（关键：SQLite WAL 模式需要写临时文件）
+
 	if s.cfg.Database.Type == "sqlite" {
 		dbDir := filepath.Dir(s.cfg.Database.SQLite.Path)
 		if err := checkDirWritable(dbDir); err != nil {
@@ -107,7 +106,7 @@ func (s *Server) runEnvChecks() EnvReport {
 		}
 	}
 
-	// 4. 录像目录可写（关键）
+
 	recRoot := s.currentStorageSettings().RootPath
 	if recRoot == "" {
 		recRoot = "./recordings"
@@ -125,7 +124,7 @@ func (s *Server) runEnvChecks() EnvReport {
 		})
 	}
 
-	// 5. 日志目录可写（关键）
+
 	logPath := s.cfg.Logging.Output
 	if logPath != "" {
 		logDir := filepath.Dir(logPath)
@@ -142,7 +141,7 @@ func (s *Server) runEnvChecks() EnvReport {
 		}
 	}
 
-	// 6. 磁盘空间（录像所在分区）
+
 	if free, err := diskFreeBytes(recRoot); err == nil {
 		const gb = 1024 * 1024 * 1024
 		switch {
@@ -165,7 +164,7 @@ func (s *Server) runEnvChecks() EnvReport {
 		}
 	}
 
-	// 7. WebDAV（可选：仅启用时检测）
+
 	if wd := s.currentWebdavSettings(); wd.Enabled && wd.URL != "" {
 		if err := checkWebdavReachable(wd.URL, wd.Username, wd.Password, wd.BasePath); err != nil {
 			report.Checks = append(report.Checks, CheckItem{
@@ -181,7 +180,7 @@ func (s *Server) runEnvChecks() EnvReport {
 		}
 	}
 
-	// 8. MinIO/S3（可选：仅启用时检测）
+
 	if mn := s.currentMinIOSettings(); mn.Enabled && mn.Endpoint != "" {
 		if err := checkMinioReachable(mn); err != nil {
 			report.Checks = append(report.Checks, CheckItem{
@@ -201,13 +200,13 @@ func (s *Server) runEnvChecks() EnvReport {
 	return report
 }
 
-// checkWebdavReachable 5 秒超时的 WebDAV 连通性+凭据检测（PROPFIND）
+
 func checkWebdavReachable(url, username, password, basePath string) error {
 	c := webdav.NewClient(url, username, password)
 	return c.CheckWithTimeout(basePath, 5*time.Second)
 }
 
-// checkMinioReachable 5 秒超时的 MinIO 连通性+凭据检测
+
 func checkMinioReachable(mnCfg config.MinIOConfig) error {
 	client, err := minio.NewClient(mnCfg.Endpoint, mnCfg.AccessKey, mnCfg.SecretKey, mnCfg.Bucket, mnCfg.UseSSL)
 	if err != nil {
@@ -218,16 +217,14 @@ func checkMinioReachable(mnCfg config.MinIOConfig) error {
 	return client.EnsureBucket(ctx)
 }
 
-// ========== 首次设置（创建管理员） ==========
 
-// needSetup 是否仍需首次设置：权威依据为「管理员用户数为 0」
 func (s *Server) needSetup() bool {
 	var count int64
 	database.DB.Model(&models.User{}).Where("role = ?", models.UserRoleAdmin).Count(&count)
 	return count == 0
 }
 
-// getSetupStatus GET /api/v1/setup/status（公开，无需登录）
+
 func (s *Server) getSetupStatus(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"need_setup": s.needSetup(),
@@ -240,7 +237,7 @@ type setupRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
-// postSetup POST /api/v1/setup（公开，仅首次设置未完成时可用）
+
 func (s *Server) postSetup(c *gin.Context) {
 	if !s.needSetup() {
 		c.JSON(403, gin.H{"error": "已完成初始化设置，该接口不再可用"})
@@ -261,7 +258,7 @@ func (s *Server) postSetup(c *gin.Context) {
 		return
 	}
 
-	// 防止并发重复创建
+
 	var count int64
 	database.DB.Model(&models.User{}).Count(&count)
 	if count > 0 {
@@ -287,7 +284,7 @@ func (s *Server) postSetup(c *gin.Context) {
 		return
 	}
 
-	// 直接签发 JWT，前端无需再次登录
+
 	token := makeToken(admin.Username, admin.Role, tokenTTL)
 	c.JSON(200, gin.H{
 		"token": token,
@@ -298,16 +295,12 @@ func (s *Server) postSetup(c *gin.Context) {
 	})
 }
 
-// ========== 系统维护：环境检测（需登录） ==========
 
-// getEnvCheck GET /api/v1/system/env（需登录，与首次设置页同一检测逻辑）
 func (s *Server) getEnvCheck(c *gin.Context) {
 	c.JSON(200, s.runEnvChecks())
 }
 
-// ========== 工具函数 ==========
 
-// runVersionCmd 执行 <cmd> -version 并返回首行版本信息
 func runVersionCmd(name string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -323,7 +316,7 @@ func runVersionCmd(name string) (string, error) {
 	return "", fmt.Errorf("无法解析版本输出")
 }
 
-// checkDirWritable 在目录中写一个临时文件验证可写
+
 func checkDirWritable(dir string) error {
 	if _, err := os.Stat(dir); err != nil {
 		return fmt.Errorf("目录不存在: %w", err)
@@ -337,7 +330,7 @@ func checkDirWritable(dir string) error {
 	return os.Remove(name)
 }
 
-// formatBytes 字节数转可读单位
+
 func formatBytes(n int64) string {
 	const unit = 1024
 	if n < unit {

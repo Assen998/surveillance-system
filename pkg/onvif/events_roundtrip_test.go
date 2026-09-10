@@ -9,12 +9,11 @@ import (
 	"testing"
 )
 
-// TestEventServiceRoundTrip 用 httptest 模拟一个支持 Pull-Point 事件服务的 ONVIF 设备，
-// 验证 CreatePullPointSubscription → PullMessages 的完整 SOAP 交互。
+
 func TestEventServiceRoundTrip(t *testing.T) {
 	mux := http.NewServeMux()
 
-	// 订阅端点：返回 SubscriptionReference（指向 /events 端点）
+
 	mux.HandleFunc("/onvif/device_service", func(w http.ResponseWriter, r *http.Request) {
 		soapAction := r.Header.Get("SOAPAction")
 		if strings.Contains(soapAction, "CreatePullPointSubscription") {
@@ -38,7 +37,7 @@ func TestEventServiceRoundTrip(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	})
 
-	// 拉取端点：返回一个运动事件
+
 	mux.HandleFunc("/onvif/events", func(w http.ResponseWriter, r *http.Request) {
 		soapAction := r.Header.Get("SOAPAction")
 		if !strings.Contains(soapAction, "PullMessages") {
@@ -83,8 +82,7 @@ func TestEventServiceRoundTrip(t *testing.T) {
 		t.Fatalf("订阅失败: %v", err)
 	}
 
-	// 注意：模拟设备返回的相对地址，客户端需拼接 host。
-	// 若 Address 是相对路径，这里修正为绝对 URL。
+
 	addr := sub.Address
 	if strings.HasPrefix(addr, "/") {
 		addr = ts.URL + addr

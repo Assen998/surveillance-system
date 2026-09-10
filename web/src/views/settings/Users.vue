@@ -8,7 +8,7 @@
             <el-icon><UserFilled /></el-icon> 添加用户
           </el-button>
         </div>
-      </template>
+</template>
 
       <el-table :data="users" border stripe size="small" style="width: 100%">
         <el-table-column prop="username" label="用户名" width="150" />
@@ -17,14 +17,14 @@
         <el-table-column label="角色" width="120">
           <template #default="scope">
             <el-tag :type="roleType(scope.row.role)" size="small">{{ roleLabels[scope.row.role] }}</el-tag>
-          </template>
+</template>
         </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="scope">
             <el-tag :type="scope.row.status === 'active' ? 'success' : 'danger'" size="small">
               {{ scope.row.status === 'active' ? '启用' : '禁用' }}
             </el-tag>
-          </template>
+</template>
         </el-table-column>
         <el-table-column prop="last_login" label="最后登录" width="180">
           <template #default="scope">{{ formatTime(scope.row.last_login) }}</template>
@@ -49,7 +49,7 @@
                 <el-icon><Delete /></el-icon> 删除
               </el-button>
             </el-button-group>
-          </template>
+</template>
         </el-table-column>
       </el-table>
     </el-card>
@@ -95,7 +95,7 @@
       <template #footer>
         <el-button @click="userDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="userSubmitLoading" @click="submitUser">保存</el-button>
-      </template>
+</template>
     </el-dialog>
 
     <!-- 权限分配对话框 -->
@@ -106,7 +106,7 @@
         <el-table-column label="当前权限" width="150">
           <template #default="scope">
             <el-tag :type="permType(scope.row.permission)" size="small">{{ permLabels[scope.row.permission] }}</el-tag>
-          </template>
+</template>
         </el-table-column>
         <el-table-column label="设置权限" width="200">
           <template #default="scope">
@@ -117,7 +117,7 @@
               <el-option label="查看+控制+配置" value="config" />
               <el-option label="完全管理" value="admin" />
             </el-select>
-          </template>
+</template>
         </el-table-column>
       </el-table>
     </el-dialog>
@@ -169,7 +169,7 @@ const fetchUsers = async () => {
   try {
     const res: any = await api.users.list()
     users.value = res.data || res || []
-  } catch (e) { /* 拦截器已提示 */ }
+  } catch (e) {  }
 }
 
 const showAddUserDialog = () => {
@@ -226,7 +226,7 @@ const submitUser = async () => {
     }
     userDialogVisible.value = false
     fetchUsers()
-  } catch (e) { /* 拦截器已提示 */ }
+  } catch (e) {  }
   finally { userSubmitLoading.value = false }
 }
 
@@ -236,7 +236,7 @@ const toggleUserStatus = async (row: any) => {
     await api.users.update(row.id, { status: newStatus })
     ElMessage.success(`用户已${newStatus === 'active' ? '启用' : '禁用'}`)
     fetchUsers()
-  } catch (e) { /* 拦截器已提示 */ }
+  } catch (e) {  }
 }
 
 const resetPassword = (row: any) => {
@@ -249,7 +249,7 @@ const resetPassword = (row: any) => {
   }).then(async ({ value }) => {
     await api.users.resetPassword(row.id, value)
     ElMessage.success(`用户 ${row.username} 密码已重置`)
-  }).catch(() => { /* 取消或失败（拦截器已提示后端错误） */ })
+  }).catch(() => {  })
 }
 
 const deleteUser = (id: number) => {
@@ -277,7 +277,7 @@ const assignPermissions = async (user: any) => {
       camera_name: cam.name,
       permission: perms.find((p) => p.camera_id === cam.id)?.permission || 'none',
     }))
-  } catch (e) { /* 拦截器已提示 */ }
+  } catch (e) {  }
 }
 
 const updateUserPermission = async (userId: number, cameraId: number, permission: string) => {
@@ -286,7 +286,7 @@ const updateUserPermission = async (userId: number, cameraId: number, permission
       camera_id: p.camera_id,
       permission: p.camera_id === cameraId ? permission : p.permission,
     })))
-  } catch (e) { /* 拦截器已提示 */ }
+  } catch (e) {  }
 }
 
 onMounted(() => fetchUsers())

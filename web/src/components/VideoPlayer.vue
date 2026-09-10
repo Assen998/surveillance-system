@@ -14,41 +14,41 @@
       @timeupdate="onTimeUpdate"
       @ended="onEnded"
     ></video>
-    
-    <!-- HLS.js 容器 -->
+
+
     <div ref="hlsContainer" v-if="type === 'hls' && Hls.isSupported()" />
-    
-    <!-- 加载状态 -->
+
+
     <div class="player-overlay loading" v-if="loading">
       <div class="spinner" />
       <p>{{ loadingText }}</p>
     </div>
-    
-    <!-- 错误状态 -->
+
+
     <div class="player-overlay error" v-if="error">
       <el-icon class="error-icon"><VideoPause /></el-icon>
       <p>{{ error }}</p>
-      <el-button type="primary" size="small" @click="retry">重试</el-button>
+      <el-button type="primary" size="small" @click="retry">{{ t('videoPlayer.retry') }}</el-button>
     </div>
-    
-    <!-- 控制栏 -->
+
+
     <div class="controls" v-show="showControls && !loading && !error" :style="{ opacity: controlsVisible ? 1 : 0 }">
       <div class="controls-left">
-        <el-tooltip content="播放/暂停" placement="top">
+        <el-tooltip :content="t('videoPlayer.playPause')" placement="top">
           <button class="control-btn" @click="togglePlay">
             <el-icon><VideoPlay v-if="paused" /><VideoPause v-else /></el-icon>
           </button>
         </el-tooltip>
-        <el-tooltip content="静音" placement="top">
+        <el-tooltip :content="t('videoPlayer.mute')" placement="top">
           <button class="control-btn" @click="toggleMute">
             <el-icon><Microphone v-if="!muted" /><Mute v-else /></el-icon>
           </button>
         </el-tooltip>
-        <el-tooltip content="音量" placement="top">
+        <el-tooltip :content="t('videoPlayer.volume')" placement="top">
           <el-slider v-model="volume" :max="1" :step="0.1" :vertical="false" style="width: 80px" show-input />
         </el-tooltip>
       </div>
-      
+
       <div class="controls-center">
         <div class="progress-bar" @mousedown="onProgressMouseDown" @click="onProgressClick">
           <div class="progress-buffer" :style="{ width: bufferPercent + '%' }" />
@@ -57,14 +57,14 @@
         </div>
         <span class="time-display">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
       </div>
-      
+
       <div class="controls-right">
-        <el-tooltip content="画中画" placement="top">
+        <el-tooltip :content="t('videoPlayer.pictureInPicture')" placement="top">
           <button class="control-btn" @click="togglePiP">
             <el-icon><FullScreen v-if="!isPiP" /><Fold v-else /></el-icon>
           </button>
         </el-tooltip>
-        <el-tooltip content="全屏" placement="top">
+        <el-tooltip :content="t('videoPlayer.fullscreen')" placement="top">
           <button class="control-btn" @click="toggleFullscreen">
             <el-icon><FullScreen v-if="!isFullscreen" /><Fold v-else /></el-icon>
           </button>
@@ -82,6 +82,9 @@ import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import Hls from 'hls.js'
 import { VideoPlay, VideoPause, Microphone, Mute, FullScreen, Fold } from '@element-plus/icons-vue'
 import { formatDuration } from '@/utils'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 interface Props {
   src: string
@@ -116,7 +119,7 @@ const videoRef = ref<HTMLVideoElement>()
 const hlsContainer = ref<HTMLDivElement>()
 
 const loading = ref(true)
-const loadingText = ref('正在加载视频流...')
+const loadingText = ref(t('videoPlayer.loading'))
 const error = ref<string>('')
 const paused = ref(true)
 const muted = ref(props.muted)
@@ -146,10 +149,10 @@ let controlsHideTimer: ReturnType<typeof setTimeout> | null = null
 
 const initHls = async () => {
   if (!videoRef.value || !props.src) return
-  
+
   loading.value = true
   error.value = ''
-  
+
   if (hls) {
     hls.destroy()
     hls = null
@@ -163,35 +166,35 @@ const initHls = async () => {
       maxMaxBufferLength: 60,
       liveSyncDurationCount: 3,
     })
-    
+
     hls.loadSource(props.src)
     hls.attachMedia(videoRef.value)
-    
+
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       if (props.autoplay) videoRef.value?.play().catch(() => {})
       loading.value = false
       paused.value = false
       emit('loaded')
     })
-    
+
     hls.on(Hls.Events.ERROR, (_, data) => {
       if (data.fatal) {
-        error.value = '视频流加载失败'
+        error.value = t('videoPlayer.loadFailed')
         loading.value = false
         hls?.destroy()
         hls = null
         emit('error', new Error(data.details))
       }
     })
-    
-    // 监控缓冲
+
+
     setInterval(() => {
       if (hls && videoRef.value && !videoRef.value.paused) {
         bufferPercent.value = hls.bufferInfo().bufferLength / (duration.value || 1) * 100
       }
     }, 1000)
   } else if (videoRef.value.canPlayType('application/vnd.apple.mpegurl')) {
-    // Safari 原生支持
+
     videoRef.value.src = props.src
     videoRef.value.addEventListener('loadedmetadata', () => {
       if (props.autoplay) videoRef.value?.play().catch(() => {})
@@ -200,32 +203,32 @@ const initHls = async () => {
       emit('loaded')
     })
   } else {
-    error.value = '浏览器不支持 HLS 播放'
+    error.value = t('videoPlayer.hlsNotSupported')
     loading.value = false
   }
 }
 
 const handleError = (e: Event) => {
   const target = e.target as HTMLVideoElement
-  error.value = `视频播放错误 (代码: ${target.error?.code})`
+  error.value = t('videoPlayer.playError', { code: target.error?.code })
   loading.value = false
   emit('error', new Error(target.error?.message || 'Unknown error'))
 }
 
 const onLoadStart = () => { loading.value = true }
 const onLoadedData = () => { loading.value = false }
-const onWaiting = () => { loading.value = true; loadingText.value = '缓冲中...' }
+const onWaiting = () => { loading.value = true; loadingText.value = t('videoPlayer.buffering') }
 const onPlaying = () => { paused.value = false; loading.value = false; emit('play') }
 const onTimeUpdate = () => {
   if (!videoRef.value) return
   currentTime.value = videoRef.value.currentTime
   duration.value = videoRef.value.duration || 0
   playedPercent.value = duration.value ? (currentTime.value / duration.value) * 100 : 0
-  
+
   if (videoRef.value.buffered.length) {
     bufferPercent.value = (videoRef.value.buffered.end(0) / duration.value) * 100
   }
-  
+
   emit('timeupdate', currentTime.value, duration.value)
 }
 const onEnded = () => { paused.value = true; emit('ended') }
@@ -277,7 +280,7 @@ const retry = () => { initHls() }
 
 const formatTime = (sec: number) => formatDuration(sec)
 
-// 控制栏自动隐藏
+
 const showControls = () => {
   controlsVisible.value = true
   if (controlsHideTimer) clearTimeout(controlsHideTimer)
@@ -340,10 +343,10 @@ onUnmounted(() => {
     padding: 8px 16px; z-index: 5;
     background: linear-gradient(transparent, rgba(0,0,0,0.6));
     transition: opacity 0.3s ease;
-    
+
     .controls-left, .controls-center, .controls-right { display: flex; align-items: center; gap: 12px; }
     .controls-center { flex: 1; display: flex; flex-direction: column; gap: 4px; align-items: center; }
-    
+
     .control-btn {
       background: rgba(255,255,255,0.2); border: none; border-radius: 4px;
       width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
@@ -360,9 +363,9 @@ onUnmounted(() => {
       .progress-played { background: #409eff; transition: width 0.1s linear; }
       .progress-thumb { position: absolute; top: -6px; width: 16px; height: 16px; background: #fff; border-radius: 50%; transform: translateX(-50%); box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
     }
-    
+
     .time-display { color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; min-width: 140px; text-align: right; }
-    
+
     .rate-select :deep(.el-select__wrapper) { font-size: 12px; }
     .rate-select :deep(.el-input__inner) { height: 30px; padding: 0 8px; }
   }

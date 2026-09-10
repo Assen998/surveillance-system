@@ -3,7 +3,7 @@
     <el-card :shadow="never">
       <template #header>
         <h3>录像存储</h3>
-      </template>
+</template>
       <el-form :model="storageForm" label-width="160">
         <el-form-item label="分段时长">
           <el-input-number v-model="storageForm.segment_duration" :min="30" :max="86400" :step="30" :controls="false" style="width: 140px" />
@@ -36,7 +36,7 @@
     <el-card :shadow="never" class="mt-16">
       <template #header>
         <h3>定时抓拍</h3>
-      </template>
+</template>
       <el-form :model="snapshotForm" label-width="160">
         <el-form-item label="启用定时抓拍">
           <el-switch v-model="snapshotForm.enabled" />
@@ -57,7 +57,7 @@
     <el-card :shadow="never" class="mt-16">
       <template #header>
         <h3>WebDAV 远程存储（可选）</h3>
-      </template>
+</template>
       <el-form :model="storageForm.webdav" label-width="160">
         <el-form-item label="启用 WebDAV">
           <el-switch v-model="storageForm.webdav.enabled" />
@@ -105,7 +105,7 @@
     <el-card :shadow="never" class="mt-16">
       <template #header>
         <h3>MinIO 对象存储（可选）</h3>
-      </template>
+</template>
       <el-form :model="storageForm.minio" label-width="160">
         <el-form-item label="启用 MinIO">
           <el-switch v-model="storageForm.minio.enabled" />
@@ -167,7 +167,7 @@ import { ElMessage } from 'element-plus'
 import { Check, Connection } from '@element-plus/icons-vue'
 import { api } from '@/api'
 
-// 存储设置
+
 const storageSaving = ref(false)
 const webdavTesting = ref(false)
 const webdavTestResult = ref<{ ok: boolean; message?: string; error?: string } | null>(null)
@@ -203,7 +203,7 @@ const storageForm = reactive({
   },
 })
 
-// 定时抓拍设置
+
 const snapshotSaving = ref(false)
 const snapshotForm = reactive({
   enabled: true,
@@ -248,7 +248,7 @@ const loadStorageSettings = async () => {
         storageForm.webdav.enabled = !!res.webdav.enabled
         storageForm.webdav.url = res.webdav.url || ''
         storageForm.webdav.username = res.webdav.username || ''
-        storageForm.webdav.password = '' // 不回显密码
+        storageForm.webdav.password = ''
         storageForm.webdav.base_path = res.webdav.base_path || 'surveillance'
         storageForm.webdav.max_days = res.webdav.max_days ?? 30
         storageForm.webdav.max_storage_gb = res.webdav.max_storage_gb ?? 0
@@ -258,7 +258,7 @@ const loadStorageSettings = async () => {
         storageForm.minio.enabled = !!res.minio.enabled
         storageForm.minio.endpoint = res.minio.endpoint || ''
         storageForm.minio.access_key = res.minio.access_key || ''
-        storageForm.minio.secret_key = '' // 不回显密钥
+        storageForm.minio.secret_key = ''
         storageForm.minio.bucket = res.minio.bucket || 'surveillance'
         storageForm.minio.use_ssl = !!res.minio.use_ssl
         storageForm.minio.base_path = res.minio.base_path || 'surveillance'
@@ -283,7 +283,7 @@ const saveStorageSettings = async () => {
         enabled: storageForm.webdav.enabled,
         url: storageForm.webdav.url,
         username: storageForm.webdav.username,
-        password: storageForm.webdav.password, // 空/掩码 = 不修改
+        password: storageForm.webdav.password,
         base_path: storageForm.webdav.base_path,
         max_days: storageForm.webdav.max_days,
         max_storage_gb: storageForm.webdav.max_storage_gb,
@@ -293,7 +293,7 @@ const saveStorageSettings = async () => {
         enabled: storageForm.minio.enabled,
         endpoint: storageForm.minio.endpoint,
         access_key: storageForm.minio.access_key,
-        secret_key: storageForm.minio.secret_key, // 空/掩码 = 不修改
+        secret_key: storageForm.minio.secret_key,
         bucket: storageForm.minio.bucket,
         use_ssl: storageForm.minio.use_ssl,
         base_path: storageForm.minio.base_path,

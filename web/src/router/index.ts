@@ -1,17 +1,18 @@
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router'
+import i18n from '@/i18n'
 
 const routes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'Login',
     component: () => import('@/views/Login.vue'),
-    meta: { title: '登录', hideInMenu: true },
+    meta: { title: 'layout.menu.login', hideInMenu: true },
   },
   {
     path: '/setup',
     name: 'Setup',
     component: () => import('@/views/Setup.vue'),
-    meta: { title: '首次设置', hideInMenu: true },
+    meta: { title: 'layout.menu.setup', hideInMenu: true },
   },
   {
     path: '/',
@@ -22,37 +23,37 @@ const routes: RouteRecordRaw[] = [
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('@/views/Dashboard.vue'),
-        meta: { title: '仪表盘', icon: 'Monitor' },
+        meta: { title: 'layout.menu.dashboard', icon: 'Monitor' },
       },
       {
         path: 'cameras',
         name: 'Cameras',
         component: () => import('@/views/cameras/Index.vue'),
-        meta: { title: '摄像头管理', icon: 'VideoCamera' },
+        meta: { title: 'layout.menu.cameras', icon: 'VideoCamera' },
         children: [
           {
             path: '',
             name: 'CameraList',
             component: () => import('@/views/cameras/List.vue'),
-            meta: { title: '摄像头列表' },
+            meta: { title: 'layout.menu.camerasList' },
           },
           {
             path: 'add',
             name: 'CameraAdd',
             component: () => import('@/views/cameras/Add.vue'),
-            meta: { title: '添加摄像头', hideInMenu: true },
+            meta: { title: 'layout.menu.camerasAdd', hideInMenu: true },
           },
           {
             path: 'edit/:id',
             name: 'CameraEdit',
             component: () => import('@/views/cameras/Add.vue'),
-            meta: { title: '编辑摄像头', hideInMenu: true },
+            meta: { title: 'layout.menu.camerasEdit', hideInMenu: true },
           },
           {
             path: ':id',
             name: 'CameraDetail',
             component: () => import('@/views/cameras/Detail.vue'),
-            meta: { title: '摄像头详情', hideInMenu: true },
+            meta: { title: 'layout.menu.camerasDetail', hideInMenu: true },
           },
         ],
       },
@@ -60,25 +61,25 @@ const routes: RouteRecordRaw[] = [
         path: 'recordings',
         name: 'Recordings',
         component: () => import('@/views/recordings/Index.vue'),
-        meta: { title: '录像管理', icon: 'Film' },
+        meta: { title: 'layout.menu.recordings', icon: 'Film' },
         children: [
           {
             path: '',
             name: 'RecordingList',
             component: () => import('@/views/recordings/List.vue'),
-            meta: { title: '录像列表' },
+            meta: { title: 'layout.menu.recordingsList' },
           },
           {
             path: 'snapshots',
             name: 'SnapshotList',
             component: () => import('@/views/recordings/Snapshots.vue'),
-            meta: { title: '抓拍图片' },
+            meta: { title: 'layout.menu.snapshots' },
           },
           {
             path: 'playback/:cameraId',
             name: 'Playback',
             component: () => import('@/views/recordings/Playback.vue'),
-            meta: { title: '历史回放', hideInMenu: true },
+            meta: { title: 'layout.menu.playback', hideInMenu: true },
           },
         ],
       },
@@ -86,13 +87,13 @@ const routes: RouteRecordRaw[] = [
         path: 'analytics',
         name: 'Analytics',
         component: () => import('@/views/analytics/Index.vue'),
-        meta: { title: '智能分析', icon: 'Cpu' },
+        meta: { title: 'layout.menu.analytics', icon: 'Cpu' },
         children: [
           {
             path: '',
             name: 'AlertList',
             component: () => import('@/views/analytics/Alerts.vue'),
-            meta: { title: '报警记录' },
+            meta: { title: 'layout.menu.alerts' },
           },
         ],
       },
@@ -100,49 +101,49 @@ const routes: RouteRecordRaw[] = [
         path: 'storage',
         name: 'Storage',
         component: () => import('@/views/storage/Index.vue'),
-        meta: { title: '存储管理', icon: 'HardDrive' },
+        meta: { title: 'layout.menu.storage', icon: 'HardDrive' },
       },
       {
         path: 'settings',
         name: 'Settings',
         component: () => import('@/views/settings/Index.vue'),
-        meta: { title: '系统设置', icon: 'Setting' },
+        meta: { title: 'layout.menu.settings', icon: 'Setting' },
         children: [
           {
             path: '',
             name: 'SystemConfig',
             component: () => import('@/views/settings/System.vue'),
-            meta: { title: '系统配置' },
+            meta: { title: 'layout.menu.settingsSystem' },
           },
           {
             path: 'camera-defaults',
             name: 'CameraDefaults',
             component: () => import('@/views/settings/CameraDefaults.vue'),
-            meta: { title: '摄像头默认配置' },
+            meta: { title: 'layout.menu.settingsCameraDefaults' },
           },
           {
             path: 'storage',
             name: 'StorageSettings',
             component: () => import('@/views/settings/Storage.vue'),
-            meta: { title: '存储设置' },
+            meta: { title: 'layout.menu.settingsStorage' },
           },
           {
             path: 'maintenance',
             name: 'SystemMaintenance',
             component: () => import('@/views/settings/Maintenance.vue'),
-            meta: { title: '系统维护' },
+            meta: { title: 'layout.menu.settingsMaintenance' },
           },
           {
             path: 'alerts',
             name: 'AlertConfig',
             component: () => import('@/views/settings/Alerts.vue'),
-            meta: { title: '报警配置' },
+            meta: { title: 'layout.menu.settingsAlerts' },
           },
           {
             path: 'users',
             name: 'UserManagement',
             component: () => import('@/views/settings/Users.vue'),
-            meta: { title: '用户管理', roles: ['admin'] },
+            meta: { title: 'layout.menu.settingsUsers', roles: ['admin'] },
           },
         ],
       },
@@ -160,7 +161,7 @@ const router = createRouter({
 })
 
 router.beforeEach((to, from, next) => {
-  document.title = `${to.meta.title || '监控系统'} - 监控录像系统`
+  document.title = `${to.meta.title ? i18n.global.t(to.meta.title as string) : i18n.global.t('layout.system')} - ${i18n.global.t('layout.appName')}`
   const token = localStorage.getItem('token')
   if (to.path !== '/login' && to.path !== '/setup' && !token) {
     next('/login')

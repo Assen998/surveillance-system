@@ -19,13 +19,13 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Client ONVIF 客户端
+
 type Client struct {
 	timeout    time.Duration
 	httpClient *http.Client
 	username   string
 	password   string
-	// Digest 认证状态
+
 	digestAuth *digestAuthState
 }
 
@@ -67,7 +67,7 @@ type Profile struct {
 	PTZConfigurationToken string `json:"ptzConfigurationToken"`
 }
 
-// StreamTransport 流传输协议
+
 type StreamTransport string
 
 const (
@@ -77,14 +77,14 @@ const (
 	TransportRTSP     StreamTransport = "RTSP"
 )
 
-// StreamProfile 流配置
+
 type StreamProfile struct {
 	ProfileToken  string
 	Transport     StreamTransport
-	StreamType    string // "RTP-Unicast", "RTP-Multicast"
+	StreamType    string
 }
 
-// NewClient 创建 ONVIF 客户端
+
 func NewClient(timeoutSec int) *Client {
 	return &Client{
 		timeout: time.Duration(timeoutSec) * time.Second,
@@ -94,14 +94,14 @@ func NewClient(timeoutSec int) *Client {
 	}
 }
 
-// SetCredentials 设置认证凭据
+
 func (c *Client) SetCredentials(username, password string) {
 	c.username = username
 	c.password = password
-	c.digestAuth = nil // 重置认证状态
+	c.digestAuth = nil
 }
 
-// Discover 发现网络中的 ONVIF 设备
+
 func (c *Client) Discover(network string) ([]*DeviceInfo, error) {
 	devices, err := c.wsDiscovery(network)
 	if err != nil {
@@ -143,33 +143,32 @@ func (c *Client) wsDiscovery(network string) ([]*DeviceInfo, error) {
 	return devices, nil
 }
 
-// ProbeSingle 探测单个 IP 的 ONVIF 设备（公开方法，用于获取配置文件）
+
 func (c *Client) ProbeSingle(ip string) *DeviceInfo {
 	info, _ := c.probeSingle(ip)
 	return info
 }
 
-// ProbeSingleEx 探测单个 IP，返回 (设备信息, 是否检测到设备但要求认证)
+
 func (c *Client) ProbeSingleEx(ip string) (*DeviceInfo, bool) {
 	return c.probeSingle(ip)
 }
 
-// probeSingle 探测单个 IP 的 ONVIF 设备（并发尝试多个端口）
-// 返回 (设备信息, authRequired)。authRequired=true 表示设备可达但要求用户名/密码
+
 func (c *Client) probeSingle(ip string) (*DeviceInfo, bool) {
-	ports := []int{80, 8000, 8080, 5000, 8899} // 调整顺序：80, 8000 最常用
-	
+	ports := []int{80, 8000, 8080, 5000, 8899}
+
 	type result struct {
 		port int
 		info *DeviceInfo
 		authRequired bool
 	}
-	
+
 	resultChan := make(chan result, len(ports))
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
-	
-	// 并发探测所有端口
+
+
 	for _, port := range ports {
 		go func(p int) {
 			addr := fmt.Sprintf("http://%s:%d/onvif/device_service", ip, p)
@@ -179,13 +178,13 @@ func (c *Client) probeSingle(ip string) (*DeviceInfo, bool) {
 			default:
 				info, authRequired := c.getDeviceInfo(addr)
 				if info != nil {
-					// 如果有认证凭据，尝试获取配置文件。
-					// GetProfiles 属于 Media 服务，端点可能不同于 device_service，先解析或回退。
+
+
 					if c.username != "" && c.password != "" {
 						mediaAddr := c.ResolveMediaXAddr(addr)
 						profiles, err := c.GetProfiles(mediaAddr)
 						if (err != nil || len(profiles) == 0) && mediaAddr != addr {
-							// 兜底：部分设备 media 服务合并到 device_service
+
 							profiles, err = c.GetProfiles(addr)
 						}
 						if err == nil && len(profiles) > 0 {
@@ -199,8 +198,8 @@ func (c *Client) probeSingle(ip string) (*DeviceInfo, bool) {
 			}
 		}(port)
 	}
-	
-	// 等待第一个成功结果，或全部完成
+
+
 	sawAuthRequired := false
 	completed := 0
 	for completed < len(ports) {
@@ -208,14 +207,14 @@ func (c *Client) probeSingle(ip string) (*DeviceInfo, bool) {
 		case r := <-resultChan:
 			completed++
 			if r.info != nil {
-				cancel() // 取消其他 goroutine
+				cancel()
 				return r.info, false
 			}
 			if r.authRequired {
 				sawAuthRequired = true
 			}
 		case <-ctx.Done():
-			// 超时，收集已完成的结果
+
 			for completed < len(ports) {
 				select {
 				case r := <-resultChan:
@@ -236,7 +235,7 @@ done:
 	return nil, sawAuthRequired
 }
 
-// doRequest 执行 HTTP 请求，自动处理 Digest 认证
+
 func (c *Client) doRequest(ctx context.Context, xaddr, soapAction, body string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, "POST", xaddr, bytes.NewReader([]byte(body)))
 	if err != nil {
@@ -246,14 +245,14 @@ func (c *Client) doRequest(ctx context.Context, xaddr, soapAction, body string) 
 	req.Header.Set("Content-Type", "application/soap+xml; charset=utf-8")
 	req.Header.Set("SOAPAction", soapAction)
 
-	// 添加认证
+
 	if c.username != "" && c.password != "" {
 		if c.digestAuth != nil && c.digestAuth.nonce != "" {
-			// 使用 Digest 认证
+
 			authHeader := c.buildDigestAuth(req.Method, xaddr)
 			req.Header.Set("Authorization", authHeader)
 		} else {
-			// 首次请求用 Basic 认证（某些设备支持），失败后会自动切换 Digest
+
 			req.SetBasicAuth(c.username, c.password)
 		}
 	}
@@ -263,7 +262,7 @@ func (c *Client) doRequest(ctx context.Context, xaddr, soapAction, body string) 
 		return nil, err
 	}
 
-	// 处理 401 认证挑战
+
 	if resp.StatusCode == 401 && c.username != "" && c.password != "" {
 		resp.Body.Close()
 		return c.doRequestWithDigest(ctx, xaddr, soapAction, body, resp.Header.Get("WWW-Authenticate"))
@@ -273,7 +272,7 @@ func (c *Client) doRequest(ctx context.Context, xaddr, soapAction, body string) 
 }
 
 func (c *Client) doRequestWithDigest(ctx context.Context, xaddr, soapAction, body, wwwAuth string) (*http.Response, error) {
-	// 解析 WWW-Authenticate 头
+
 	c.parseDigestChallenge(wwwAuth)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", xaddr, bytes.NewReader([]byte(body)))
@@ -291,24 +290,24 @@ func (c *Client) doRequestWithDigest(ctx context.Context, xaddr, soapAction, bod
 }
 
 func (c *Client) parseDigestChallenge(challenge string) {
-	// 解析 Digest 认证挑战
-	// 格式: Digest realm="...", nonce="...", qop="...", algorithm="...", opaque="..."
+
+
 	c.digestAuth = &digestAuthState{}
-	
-	// 去掉 "Digest " 前缀
+
+
 	challenge = strings.TrimPrefix(challenge, "Digest ")
-	
+
 	parts := strings.Split(challenge, ",")
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
-		// 去掉 key=value 中 value 的引号
+
 		kv := strings.SplitN(part, "=", 2)
 		if len(kv) != 2 {
 			continue
 		}
 		key := strings.TrimSpace(kv[0])
 		val := strings.Trim(kv[1], "\"")
-		
+
 		switch key {
 		case "realm":
 			c.digestAuth.realm = val
@@ -322,7 +321,7 @@ func (c *Client) parseDigestChallenge(challenge string) {
 			c.digestAuth.opaque = val
 		}
 	}
-	
+
 	if c.digestAuth.algorithm == "" {
 		c.digestAuth.algorithm = "MD5"
 	}
@@ -337,16 +336,16 @@ func (c *Client) buildDigestAuth(method, uri string) string {
 	nc := fmt.Sprintf("%08x", c.digestAuth.nc)
 	cnonce := generateCnonce()
 
-	// HA1 = MD5(username:realm:password)
+
 	ha1 := md5.Sum([]byte(fmt.Sprintf("%s:%s:%s", c.username, c.digestAuth.realm, c.password)))
 	ha1Str := hex.EncodeToString(ha1[:])
 
-	// HA2 = MD5(method:uri)
+
 	ha2 := md5.Sum([]byte(fmt.Sprintf("%s:%s", method, uri)))
 	ha2Str := hex.EncodeToString(ha2[:])
 
-	// Response = MD5(HA1:nonce:nc:cnonce:qop:HA2)
-	response := md5.Sum([]byte(fmt.Sprintf("%s:%s:%s:%s:%s:%s", 
+
+	response := md5.Sum([]byte(fmt.Sprintf("%s:%s:%s:%s:%s:%s",
 		ha1Str, c.digestAuth.nonce, nc, cnonce, c.digestAuth.qop, ha2Str)))
 	responseStr := hex.EncodeToString(response[:])
 
@@ -363,13 +362,13 @@ func (c *Client) buildDigestAuth(method, uri string) string {
 func generateCnonce() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		// fallback to timestamp-based if crypto/rand fails
+
 		return fmt.Sprintf("%x", time.Now().UnixNano())[:16]
 	}
 	return hex.EncodeToString(b)[:16]
 }
 
-// Capabilities 各 ONVIF 服务的真实端点地址（GetCapabilities 返回）
+
 type Capabilities struct {
 	DeviceXAddr string
 	MediaXAddr  string
@@ -378,8 +377,7 @@ type Capabilities struct {
 	ImagingXAddr string
 }
 
-// GetCapabilities 获取设备能力与各服务端点地址。xaddr 为 Device 服务地址（device_service）。
-// GetProfiles/GetStreamUri 等 Media 接口必须发往 MediaXAddr，而非 device_service。
+
 func (c *Client) GetCapabilities(xaddr string) (*Capabilities, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
@@ -402,7 +400,7 @@ func (c *Client) GetCapabilities(xaddr string) (*Capabilities, error) {
 		PTZXAddr:     extractServiceXAddr(raw, "PTZ"),
 		ImagingXAddr: extractServiceXAddr(raw, "Imaging"),
 	}
-	// 兜底：很多设备 Media/Events 服务与 device_service 同地址；拿不到时回退 device_service
+
 	if caps.DeviceXAddr == "" {
 		caps.DeviceXAddr = xaddr
 	}
@@ -415,7 +413,7 @@ func (c *Client) GetCapabilities(xaddr string) (*Capabilities, error) {
 	return caps, nil
 }
 
-// ResolveMediaXAddr 解析 Media 服务端点：优先 GetCapabilities，失败则返回 device_service（兜底）
+
 func (c *Client) ResolveMediaXAddr(deviceXAddr string) string {
 	caps, err := c.GetCapabilities(deviceXAddr)
 	if err == nil && caps.MediaXAddr != "" {
@@ -424,7 +422,7 @@ func (c *Client) ResolveMediaXAddr(deviceXAddr string) string {
 	return deviceXAddr
 }
 
-// ResolveEventsXAddr 解析 Events 服务端点：优先 GetCapabilities，失败则返回 device_service（兜底）
+
 func (c *Client) ResolveEventsXAddr(deviceXAddr string) string {
 	caps, err := c.GetCapabilities(deviceXAddr)
 	if err == nil && caps.EventsXAddr != "" {
@@ -433,7 +431,7 @@ func (c *Client) ResolveEventsXAddr(deviceXAddr string) string {
 	return deviceXAddr
 }
 
-// extractServiceXAddr 从 GetCapabilities 响应中提取指定服务的 XAddr（兼容命名空间前缀差异）
+
 func extractServiceXAddr(raw, service string) string {
 	re := regexp.MustCompile(`(?s)<(?:[^>]*:)?` + service + `[^>]*>\s*<(?:[^>]*:)?XAddr[^>]*>([^<]+)</(?:[^>]*:)?XAddr>`)
 	if m := re.FindStringSubmatch(raw); len(m) >= 2 {
@@ -442,12 +440,12 @@ func extractServiceXAddr(raw, service string) string {
 	return ""
 }
 
-// getDeviceInfo 获取设备信息，返回 (设备信息, 是否要求认证)
+
 func (c *Client) getDeviceInfo(xaddr string) (*DeviceInfo, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	resp, err := c.doRequest(ctx, xaddr, 
+	resp, err := c.doRequest(ctx, xaddr,
 		`"http://www.onvif.org/ver10/device/wsdl/GetDeviceInformation"`,
 		getDeviceInfoBody())
 	if err != nil {
@@ -455,7 +453,7 @@ func (c *Client) getDeviceInfo(xaddr string) (*DeviceInfo, bool) {
 	}
 	defer resp.Body.Close()
 
-	// 401: 设备可达但要求认证（未提供凭据或凭据错误）
+
 	if resp.StatusCode == 401 {
 		return nil, true
 	}
@@ -484,7 +482,7 @@ func (c *Client) GetDeviceInfo(xaddr string) (*DeviceInfo, error) {
 	return info, nil
 }
 
-// GetProfiles 获取所有配置文件
+
 func (c *Client) GetProfiles(xaddr string) ([]Profile, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
@@ -501,7 +499,7 @@ func (c *Client) GetProfiles(xaddr string) ([]Profile, error) {
 	return parseProfiles(string(body))
 }
 
-// GetStreamUri 获取流地址，支持指定传输协议
+
 func (c *Client) GetStreamUri(xaddr, profileToken string, transport StreamTransport) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
@@ -519,9 +517,9 @@ func (c *Client) GetStreamUri(xaddr, profileToken string, transport StreamTransp
 	return parseStreamUri(string(respBody))
 }
 
-// GetStreamUriWithRetry 重试获取流地址，优先尝试 preferredToken 指定的 Profile
+
 func (c *Client) GetStreamUriWithRetry(xaddr string, profiles []Profile, preferredToken string, transport StreamTransport, maxRetries int) (string, *Profile, error) {
-	// 重排顺序：优先的 Profile 放最前，其余保持原顺序
+
 	order := make([]Profile, 0, len(profiles))
 	if preferredToken != "" {
 		for _, p := range profiles {
@@ -545,7 +543,7 @@ func (c *Client) GetStreamUriWithRetry(xaddr string, profiles []Profile, preferr
 			return uri, &profile, nil
 		}
 		lastErr = err
-		// 尝试下一个 profile
+
 	}
 
 	return "", nil, fmt.Errorf("所有配置文件尝试失败: %v", lastErr)
@@ -567,7 +565,7 @@ func (c *Client) PTZControl(xaddr, command string, speed float64) error {
 	return nil
 }
 
-// SOAP 消息体
+
 func getDeviceInfoBody() string {
 	return `<?xml version="1.0" encoding="UTF-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
@@ -597,7 +595,7 @@ func getCapabilitiesBody() string {
 </s:Envelope>`
 }
 
-// getStreamUriBody 支持指定传输协议
+
 func getStreamUriBody(transport StreamTransport) string {
 	proto := "RTSP"
 	switch transport {
@@ -658,7 +656,7 @@ func getPTZBody(command string, speed float64) string {
 </s:Envelope>`, "profile_token_placeholder", x, y, z)
 }
 
-// XML 解析
+
 type soapEnvelope struct {
 	XMLName xml.Name `xml:"Envelope"`
 	Body    soapBody `xml:"Body"`
@@ -799,7 +797,7 @@ func parseStreamUri(body string) (string, error) {
 	return "", fmt.Errorf("未找到流地址")
 }
 
-// 工具函数
+
 func incIP(ip net.IP) {
 	for i := len(ip) - 1; i >= 0; i-- {
 		ip[i]++
@@ -829,28 +827,26 @@ type probeMatch struct {
 	Port         int
 }
 
-// WSDiscover 真正的 WS-Discovery 组播探测（ONVIF 标准）
-// 向 239.255.255.250:3702 发送 Probe，收集 ProbeMatches 响应
-// 返回发现的设备列表（含 IP、端口、XAddr、厂商、型号、配置文件）
+
 func (c *Client) WSDiscover(timeoutSec int) ([]*DeviceInfo, error) {
-	// 组播地址
+
 	mcastAddr := &net.UDPAddr{
 		IP:   net.ParseIP("239.255.255.250"),
 		Port: 3702,
 	}
 
-	// 监听所有接口的 UDP 响应
+
 	conn, err := net.ListenPacket("udp4", "0.0.0.0:0")
 	if err != nil {
 		return nil, fmt.Errorf("监听 UDP 失败: %w", err)
 	}
 	defer conn.Close()
 
-	// 设置读取超时
+
 	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
 	conn.SetReadDeadline(deadline)
 
-	// 构造 WS-Discovery Probe 消息（SOAP over UDP）
+
 	messageID := fmt.Sprintf("uuid:%s", generateMessageID())
 	probeMsg := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <e:Envelope xmlns:e="http://www.w3.org/2003/05/soap-envelope"
@@ -868,20 +864,20 @@ func (c *Client) WSDiscover(timeoutSec int) ([]*DeviceInfo, error) {
   </e:Body>
 </e:Envelope>`, messageID)
 
-	// 发送组播 Probe
+
 	if _, err := conn.WriteTo([]byte(probeMsg), mcastAddr); err != nil {
 		return nil, fmt.Errorf("发送组播 Probe 失败: %w", err)
 	}
 
-	// 收集响应
-	matches := make(map[string]*probeMatch) // key: XAddr 去重
+
+	matches := make(map[string]*probeMatch)
 	buf := make([]byte, 8192)
 
 	for {
 		n, _, err := conn.ReadFrom(buf)
 		if err != nil {
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
-				break // 超时结束
+				break
 			}
 			continue
 		}
@@ -890,7 +886,7 @@ func (c *Client) WSDiscover(timeoutSec int) ([]*DeviceInfo, error) {
 		}
 
 		resp := string(buf[:n])
-		// 解析 ProbeMatches
+
 		if strings.Contains(resp, "ProbeMatches") {
 			pm := c.parseProbeMatch(resp)
 			if pm != nil {
@@ -903,8 +899,7 @@ func (c *Client) WSDiscover(timeoutSec int) ([]*DeviceInfo, error) {
 		}
 	}
 
-	// 转换为 DeviceInfo。组播发现阶段没有凭据：设备即使返回 401，
-	// 也必须保留（发现的目标是找到设备 IP/XAddr），详情交给选中后的带凭据探测。
+
 	var results []*DeviceInfo
 	for _, pm := range matches {
 		if pm.IP == "" || pm.Port == 0 {
@@ -923,7 +918,7 @@ func (c *Client) WSDiscover(timeoutSec int) ([]*DeviceInfo, error) {
 		if dev.XAddr == "" {
 			dev.XAddr = fmt.Sprintf("http://%s:%d/onvif/device_service", dev.IP, dev.Port)
 		}
-		// 设备未启用认证时可以顺手补充设备信息；401/网络失败都不影响发现结果
+
 		if info, _ := c.getDeviceInfo(dev.XAddr); info != nil {
 			dev.Name = info.Name
 			dev.Manufacturer = firstNonEmpty(pm.Manufacturer, info.Manufacturer)
@@ -940,12 +935,12 @@ func (c *Client) WSDiscover(timeoutSec int) ([]*DeviceInfo, error) {
 
 var xaddrsRe = regexp.MustCompile(`<[^>]*XAddrs[^>]*>([^<]+)</[^>]*XAddrs>`)
 
-// parseProbeMatch 解析 WS-Discovery ProbeMatch 响应
+
 func (c *Client) parseProbeMatch(body string) *probeMatch {
-	// 简易 XML 解析（避免依赖具体命名空间前缀）
+
 	pm := &probeMatch{}
 
-	// 提取 XAddrs
+
 	if m := xaddrsRe.FindStringSubmatch(body); len(m) > 1 {
 		for _, x := range strings.Fields(m[1]) {
 			if strings.HasPrefix(x, "http://") || strings.HasPrefix(x, "https://") {
@@ -955,7 +950,7 @@ func (c *Client) parseProbeMatch(body string) *probeMatch {
 		}
 	}
 
-	// 从 XAddr 推导 IP 和端口
+
 	if pm.XAddr != "" {
 		if strings.HasPrefix(pm.XAddr, "http://") {
 			hostPart := strings.TrimPrefix(pm.XAddr, "http://")
@@ -970,7 +965,7 @@ func (c *Client) parseProbeMatch(body string) *probeMatch {
 		}
 	}
 
-	// 提取 Metadata 中的设备信息
+
 	extract := func(tag string) string {
 		start := strings.Index(body, "<"+tag+">")
 		if start < 0 {
@@ -999,7 +994,7 @@ func (c *Client) parseProbeMatch(body string) *probeMatch {
 	return pm
 }
 
-// generateMessageID 生成简单的消息 ID
+
 func generateMessageID() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
@@ -1015,11 +1010,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// ==================== 网段快速扫描（WS-Discovery 不可用时的回退方案） ====================
 
-// quickONVIFCheck 对单个 IP 的常用 ONVIF 端口做快速探测。
-// 判定依据：/onvif/device_service 端点返回 401 认证挑战（需登录的 ONVIF 设备）、
-// 200 SOAP 响应（免认证设备）或 405/400（端点存在但方法/报文不被接受）。
 func (c *Client) quickONVIFCheck(ip string, timeout time.Duration) *DeviceInfo {
 	client := &http.Client{Timeout: timeout}
 	type found struct {
@@ -1044,7 +1035,7 @@ func (c *Client) quickONVIFCheck(ip string, timeout time.Duration) *DeviceInfo {
 
 			switch {
 			case resp.StatusCode == http.StatusUnauthorized:
-				// 401 + WWW-Authenticate：ONVIF 端点存在，需要凭据
+
 				if resp.Header.Get("WWW-Authenticate") != "" {
 					ch <- &DeviceInfo{IP: ip, Port: port, XAddr: xaddr, Name: ip, AuthRequired: true}
 				}
@@ -1058,7 +1049,7 @@ func (c *Client) quickONVIFCheck(ip string, timeout time.Duration) *DeviceInfo {
 					ch <- info
 				}
 			case resp.StatusCode == http.StatusMethodNotAllowed:
-				// 405：ONVIF 端点存在但不接受该方法
+
 				ch <- &DeviceInfo{IP: ip, Port: port, XAddr: xaddr, Name: ip, AuthRequired: true}
 			case resp.StatusCode == http.StatusBadRequest:
 				body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
@@ -1077,7 +1068,7 @@ func (c *Client) quickONVIFCheck(ip string, timeout time.Duration) *DeviceInfo {
 	}
 }
 
-// SweepCIDR 对指定网段做高并发 ONVIF 快速扫描
+
 func (c *Client) SweepCIDR(cidr string, perProbe time.Duration) []*DeviceInfo {
 	ip, ipNet, err := net.ParseCIDR(cidr)
 	if err != nil {
@@ -1125,7 +1116,7 @@ func (c *Client) SweepCIDR(cidr string, perProbe time.Duration) []*DeviceInfo {
 	return results
 }
 
-// LocalScanCIDRs 返回本机所有活动接口所在 /24 网段（排除回环/虚拟网桥/Docker/Tailscale）
+
 func LocalScanCIDRs() []string {
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -1147,7 +1138,7 @@ func LocalScanCIDRs() []string {
 			if ip4 == nil {
 				continue
 			}
-			// 排除：回环、Docker 网桥(172.16-31/12)、Tailscale CGNAT(100.64/10)
+
 			if ip4[0] == 127 {
 				continue
 			}
@@ -1167,7 +1158,7 @@ func LocalScanCIDRs() []string {
 	return cidrs
 }
 
-// SweepLocalSubnets 扫描本机所有网段的 ONVIF 设备（多网段并行，整体超时控制）
+
 func (c *Client) SweepLocalSubnets(overall time.Duration) ([]*DeviceInfo, error) {
 	cidrs := LocalScanCIDRs()
 	if len(cidrs) == 0 {
@@ -1208,36 +1199,32 @@ func (c *Client) SweepLocalSubnets(overall time.Duration) ([]*DeviceInfo, error)
 	return results, nil
 }
 
-// ==================== 事件订阅（EventService / Pull-Point） ====================
 
-// EventSubscription 事件订阅句柄（Pull-Point 订阅返回的拉取地址）
 type EventSubscription struct {
-	// Address 拉取消息所用的端点地址（SubscriptionReference/Address）
+
 	Address string
-	// TerminationTime 订阅终止时间（到期前需 Renew/重新订阅）
+
 	TerminationTime time.Time
 }
 
-// OnvifEvent 解析后的 ONVIF 通知事件
+
 type OnvifEvent struct {
-	// Topic 去掉命名空间前缀的事件主题，如 "RuleEngine/MotionRegionDetector/Motion"
+
 	Topic string
-	// UtcTime 事件发生时间（tt:Message UtcTime），零值表示未解析到
+
 	UtcTime time.Time
-	// Items SimpleItem 键值对（如 IsMotion, Source 等）
+
 	Items map[string]string
 }
 
-// 事件服务 SOAPAction
+
 const (
 	soapActionCreatePullPoint = `"http://www.onvif.org/ver10/events/wsdl/PullPointSubscription/CreatePullPointSubscriptionRequest"`
 	soapActionPullMessages    = `"http://www.onvif.org/ver10/events/wsdl/PullPointSubscription/PullMessagesRequest"`
 	soapActionUnsubscribe     = `"http://www.onvif.org/ver10/events/wsdl/PullPointSubscription/UnsubscribeRequest"`
 )
 
-// CreatePullPointSubscription 创建 Pull-Point 订阅。
-// xaddr 为设备服务地址（通常与 device_service 相同）。返回订阅句柄。
-// 注意：设备可能不支持 Pull-Point，返回 error 时调用方应降级跳过事件订阅。
+
 func (c *Client) CreatePullPointSubscription(xaddr string) (*EventSubscription, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
@@ -1261,10 +1248,7 @@ func (c *Client) CreatePullPointSubscription(xaddr string) (*EventSubscription, 
 	return parseSubscription(string(raw))
 }
 
-// PullMessages 从订阅地址拉取事件（阻塞式）。timeoutSec 为等待时间。
-// 返回本次拉取到的事件列表（可能为空，表示超时无事件）。
-// 注意：PullMessages 是长轮询——设备在无事件时会阻塞到 timeoutSec 才返回空响应，
-// 因此 HTTP 客户端超时必须显著大于 timeoutSec，否则会提前超时导致频繁重订阅。
+
 func (c *Client) PullMessages(subscriptionURL string, timeoutSec int) ([]OnvifEvent, error) {
 	if timeoutSec <= 0 {
 		timeoutSec = 10
@@ -1272,8 +1256,7 @@ func (c *Client) PullMessages(subscriptionURL string, timeoutSec int) ([]OnvifEv
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec+10)*time.Second)
 	defer cancel()
 
-	// 长轮询需要独立、更长的 HTTP 超时（+10s 缓冲），临时放宽共享 client 的超时，
-	// 调用结束恢复。本 client 实例仅被单个订阅 goroutine 串行使用，故安全。
+
 	origTimeout := c.httpClient.Timeout
 	c.httpClient.Timeout = time.Duration(timeoutSec+10) * time.Second
 	defer func() { c.httpClient.Timeout = origTimeout }()
@@ -1297,7 +1280,7 @@ func (c *Client) PullMessages(subscriptionURL string, timeoutSec int) ([]OnvifEv
 	return parseNotificationMessages(string(raw)), nil
 }
 
-// Unsubscribe 取消订阅并释放设备端资源（失败不报致命错误）
+
 func (c *Client) Unsubscribe(subscriptionURL string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
@@ -1312,7 +1295,7 @@ func (c *Client) Unsubscribe(subscriptionURL string) error {
 	return nil
 }
 
-// SOAP 消息体
+
 func getPullPointSubscriptionBody() string {
 	return `<?xml version="1.0" encoding="UTF-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
@@ -1325,7 +1308,7 @@ func getPullPointSubscriptionBody() string {
 }
 
 func getPullMessagesBody(timeoutSec int) string {
-	// PTxxS：ISO-8601 时长格式
+
 	dur := fmt.Sprintf("PT%dS", timeoutSec)
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
@@ -1347,19 +1330,18 @@ func getUnsubscribeBody() string {
 </s:Envelope>`
 }
 
-// 解析工具：用正则容错提取（兼容各厂商命名空间前缀差异）
 
 var (
 	reSubscriptionAddress = regexp.MustCompile(`<[^>]*(?:wsa5?:)?Address[^>]*>\s*([^<\s]+)\s*</[^>]*(?:wsa5?:)?Address>`)
 	reTerminationTime     = regexp.MustCompile(`<[^>]*TerminationTime[^>]*>\s*([^<]+?)\s*</[^>]*TerminationTime>`)
 	reCurrentTime         = regexp.MustCompile(`<[^>]*CurrentTime[^>]*>\s*([^<]+?)\s*</[^>]*CurrentTime>`)
-	// 提取 Topic 文本（去掉命名空间前缀）
+
 	reTopic = regexp.MustCompile(`<[^>]*Topic[^>]*>\s*([^<]+?)\s*</[^>]*Topic>`)
-	// NotificationMessage 块（一个事件）
+
 	reNotificationMessage = regexp.MustCompile(`(?s)<[^>]*NotificationMessage[^>]*>.*?</[^>]*NotificationMessage>`)
-	// SimpleItem Name/Value
+
 	reSimpleItem = regexp.MustCompile(`(?s)<[^>]*SimpleItem\s+Name="([^"]+)"\s+Value="([^"]*)"`)
-	// tt:Message 的 UtcTime
+
 	reUtcTime = regexp.MustCompile(`(?s)<[^>]*Message[^>]*UtcTime="([^"]+)"`)
 )
 
@@ -1378,7 +1360,7 @@ func parseSubscription(raw string) (*EventSubscription, error) {
 	return sub, nil
 }
 
-// parseOnvifTime 解析 ONVIF 时间字符串（ISO8601/XSD dateTime）
+
 func parseOnvifTime(s string) (time.Time, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -1411,7 +1393,7 @@ func parseNotificationMessages(raw string) []OnvifEvent {
 				ev.Items[sm[1]] = sm[2]
 			}
 		}
-		// 即使 Topic 为空，只要有 SimpleItem 也算一个事件
+
 		if ev.Topic != "" || len(ev.Items) > 0 {
 			events = append(events, ev)
 		}
@@ -1419,10 +1401,10 @@ func parseNotificationMessages(raw string) []OnvifEvent {
 	return events
 }
 
-// normalizeTopic 去掉命名空间前缀，返回形如 "RuleEngine/MotionRegionDetector/Motion"
+
 func normalizeTopic(topic string) string {
 	s := strings.TrimSpace(topic)
-	// 去掉前半部分命名空间（形如 tns1: 或 Axis: 或 urn:...）
+
 	if idx := strings.IndexByte(s, ':'); idx >= 0 && idx < 8 {
 		s = s[idx+1:]
 	}

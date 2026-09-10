@@ -1,16 +1,16 @@
 <template>
   <div class="camera-detail-page" v-if="camera">
-    <!-- 顶部信息栏 -->
+
     <el-card :shadow="never" class="mb-16">
       <div class="camera-header">
         <div class="camera-basic">
           <h2>{{ camera.name }}</h2>
           <div class="camera-meta">
             <el-tag :class="['status-tag', camera.status]" size="small">
-              {{ statusMap[camera.status] }}
+              {{ t('camerasDetail.status.' + camera.status) }}
             </el-tag>
             <el-tag :type="recordTypeTagType(camera.record_type)" size="small" effect="dark">
-              录像模式：{{ recordTypeLabel(camera.record_type) }}
+              {{ t('camerasDetail.recordMode', { mode: recordTypeLabel(camera.record_type) }) }}
             </el-tag>
             <span class="meta-item">{{ camera.protocol.toUpperCase() }}</span>
             <span class="meta-item">{{ camera.ip }}:{{ camera.port }}</span>
@@ -20,25 +20,25 @@
         </div>
         <div class="camera-actions">
           <el-radio-group v-model="previewStream" size="small" class="stream-switch" @change="onStreamChange">
-            <el-radio-button value="sub">子码流</el-radio-button>
-            <el-radio-button value="main">主码流</el-radio-button>
+            <el-radio-button value="sub">{{ t('camerasDetail.subStream') }}</el-radio-button>
+            <el-radio-button value="main">{{ t('camerasDetail.mainStream') }}</el-radio-button>
           </el-radio-group>
           <el-button-group>
             <el-button :type="camera.record_enabled ? 'success' : ''" @click="toggleRecord" :loading="recordLoading">
               <el-icon><VideoCamera /></el-icon>
-              {{ camera.record_enabled ? '停止录像' : '开始录像' }}
+              {{ camera.record_enabled ? t('camerasDetail.stopRecording') : t('camerasDetail.startRecording') }}
             </el-button>
             <el-button @click="takeSnapshot" :loading="snapshotLoading">
-              <el-icon><Camera /></el-icon> 抓拍
+              <el-icon><Camera /></el-icon> {{ t('camerasDetail.snapshot') }}
             </el-button>
             <el-button type="primary" @click="restartStream" :loading="restartLoading">
-              <el-icon><Refresh /></el-icon> 重连流
+              <el-icon><Refresh /></el-icon> {{ t('camerasDetail.restartStream') }}
             </el-button>
             <el-button @click="goEdit">
-              <el-icon><Edit /></el-icon> 编辑摄像头
+              <el-icon><Edit /></el-icon> {{ t('camerasDetail.editCamera') }}
             </el-button>
             <el-button @click="goBack">
-              <el-icon><ArrowLeft /></el-icon> 返回
+              <el-icon><ArrowLeft /></el-icon> {{ t('camerasDetail.back') }}
             </el-button>
           </el-button-group>
         </div>
@@ -46,11 +46,11 @@
     </el-card>
 
     <el-row :gutter="24">
-      <!-- 视频预览区 -->
+
       <el-col :xs="24" :lg="16">
         <el-card :shadow="never" class="video-card">
           <div class="video-container aspect-16-9" ref="videoContainer">
-            <!-- HLS 播放器 -->
+
             <video
               ref="videoPlayer"
               class="hls-video"
@@ -61,23 +61,23 @@
             ></video>
             <div class="loading-overlay" v-if="videoLoading">
               <el-icon class="loading-spinner"><Loading /></el-icon>
-              <p>正在连接视频流...</p>
+              <p>{{ t('camerasDetail.connectingStream') }}</p>
             </div>
             <div class="error-overlay" v-if="videoError">
               <el-icon><VideoPause /></el-icon>
               <p>{{ videoError }}</p>
-              <el-button type="primary" @click="initPlayer">重试</el-button>
+              <el-button type="primary" @click="initPlayer">{{ t('camerasDetail.retry') }}</el-button>
             </div>
 
-            <!-- 控制栏 -->
+
             <div class="video-controls">
               <div class="controls-left">
-                <el-tooltip content="全屏" placement="top">
+                <el-tooltip :content="t('camerasDetail.fullscreen')" placement="top">
                   <el-button circle size="small" @click="toggleFullscreen">
                     <el-icon><FullScreen v-if="!isFullscreen" /><Fold v-else /></el-icon>
                   </el-button>
                 </el-tooltip>
-                <el-tooltip content="声音" placement="top">
+                <el-tooltip :content="t('camerasDetail.sound')" placement="top">
                   <el-button circle size="small" @click="toggleMute">
                     <el-icon><VideoPlay v-if="!isMuted" /><Mute v-else /></el-icon>
                   </el-button>
@@ -89,12 +89,12 @@
                 </span>
               </div>
               <div class="controls-right">
-                <el-tooltip content="录像" placement="top">
+                <el-tooltip :content="t('camerasDetail.record')" placement="top">
                   <el-button circle size="small" :type="isRecording ? 'danger' : ''" @click="toggleRecord">
                     <el-icon><VideoCamera /></el-icon>
                   </el-button>
                 </el-tooltip>
-                <el-tooltip content="抓拍" placement="top">
+                <el-tooltip :content="t('camerasDetail.snapshot')" placement="top">
                   <el-button circle size="small" @click="takeSnapshot">
                     <el-icon><Camera /></el-icon>
                   </el-button>
@@ -104,15 +104,15 @@
           </div>
         </el-card>
 
-        <!-- PTZ 控制 -->
+
         <el-card :shadow="never" class="mt-16" v-if="camera.ptz_enabled">
           <template #header>
-            <h3>云台控制 (PTZ)</h3>
-          </template>
+            <h3>{{ t('camerasDetail.ptzControl') }}</h3>
+</template>
           <div class="ptz-control">
             <div v-if="camera.ptz_supported === false" class="ptz-unavailable">
-              该摄像头不支持 PTZ 控制（固定机位无云台）。
-              如无需此功能，可在编辑摄像头时关闭「启用 PTZ 控制」。
+              {{ t('camerasDetail.ptzUnsupported') }}
+              {{ t('camerasDetail.ptzDisableTip') }}
             </div>
             <template v-else>
             <div class="ptz-direction">
@@ -138,17 +138,17 @@
             </div>
             <div class="ptz-zoom">
               <el-button @mousedown="ptzStart('zoom_in')" @mouseup="ptzStop" @mouseleave="ptzStop">
-                <el-icon><ZoomIn /></el-icon> 放大
+                <el-icon><ZoomIn /></el-icon> {{ t('camerasDetail.zoomIn') }}
               </el-button>
               <el-button @mousedown="ptzStart('zoom_out')" @mouseup="ptzStop" @mouseleave="ptzStop">
-                <el-icon><ZoomOut /></el-icon> 缩小
+                <el-icon><ZoomOut /></el-icon> {{ t('camerasDetail.zoomOut') }}
               </el-button>
             </div>
             <div class="ptz-speed">
               <el-slider v-model="ptzSpeed" :min="0.1" :max="1" :step="0.1" show-stops style="width: 200px" />
-              <span>速度: {{ ptzSpeed }}</span>
+              <span>{{ t('camerasDetail.ptzSpeed') }}{{ ptzSpeed }}</span>
             </div>
-            </template>
+</template>
           </div>
         </el-card>
       </el-col>
@@ -158,16 +158,16 @@
         <!-- 基本信息 -->
         <el-card :shadow="never" class="mb-16">
           <template #header>
-            <h3>基本信息</h3>
-          </template>
+            <h3>{{ t('camerasDetail.basicInfo') }}</h3>
+</template>
           <div class="info-grid">
-            <div class="info-item"><span class="label">设备 ID</span><span class="value">{{ camera.id }}</span></div>
-            <div class="info-item"><span class="label">制造商</span><span class="value">{{ camera.manufacturer || '未知' }}</span></div>
-            <div class="info-item"><span class="label">型号</span><span class="value">{{ camera.model || '未知' }}</span></div>
-            <div class="info-item"><span class="label">固件版本</span><span class="value">{{ camera.firmware || '未知' }}</span></div>
-            <div class="info-item"><span class="label">串号</span><span class="value">{{ camera.serial_number || '未知' }}</span></div>
-            <div class="info-item"><span class="label">最后在线</span><span class="value">{{ formatTime(camera.last_online) }}</span></div>
-            <div class="info-item"><span class="label">错误信息</span><span class="value error">{{ camera.error_msg || '无' }}</span></div>
+            <div class="info-item"><span class="label">{{ t('camerasDetail.deviceId') }}</span><span class="value">{{ camera.id }}</span></div>
+            <div class="info-item"><span class="label">{{ t('camerasDetail.manufacturer') }}</span><span class="value">{{ camera.manufacturer || t('camerasDetail.unknown') }}</span></div>
+            <div class="info-item"><span class="label">{{ t('camerasDetail.model') }}</span><span class="value">{{ camera.model || t('camerasDetail.unknown') }}</span></div>
+            <div class="info-item"><span class="label">{{ t('camerasDetail.firmware') }}</span><span class="value">{{ camera.firmware || t('camerasDetail.unknown') }}</span></div>
+            <div class="info-item"><span class="label">{{ t('camerasDetail.serialNumber') }}</span><span class="value">{{ camera.serial_number || t('camerasDetail.unknown') }}</span></div>
+            <div class="info-item"><span class="label">{{ t('camerasDetail.lastOnline') }}</span><span class="value">{{ formatTime(camera.last_online) }}</span></div>
+            <div class="info-item"><span class="label">{{ t('camerasDetail.errorMsg') }}</span><span class="value error">{{ camera.error_msg || t('camerasDetail.none') }}</span></div>
           </div>
         </el-card>
 
@@ -175,10 +175,10 @@
         <el-card :shadow="never" class="mb-16">
           <template #header>
             <div class="card-header">
-              <h3>最近录像</h3>
-              <el-button size="small" link @click="goToPlayback">查看全部</el-button>
+              <h3>{{ t('camerasDetail.recentRecordings') }}</h3>
+              <el-button size="small" link @click="goToPlayback">{{ t('camerasDetail.viewAll') }}</el-button>
             </div>
-          </template>
+</template>
           <div class="recording-list" v-if="recentRecordings.length > 0">
             <div class="recording-item" v-for="rec in recentRecordings" :key="rec.id" @click="playRecording(rec)">
               <div class="recording-thumb">
@@ -195,7 +195,7 @@
           </div>
           <div class="empty-state" v-else>
             <el-icon><Film /></el-icon>
-            <p>暂无录像</p>
+            <p>{{ t('camerasDetail.noRecordings') }}</p>
           </div>
         </el-card>
 
@@ -203,10 +203,10 @@
         <el-card :shadow="never">
           <template #header>
             <div class="card-header">
-              <h3>最近抓拍</h3>
-              <el-button size="small" link>查看全部</el-button>
+              <h3>{{ t('camerasDetail.recentSnapshots') }}</h3>
+              <el-button size="small" link>{{ t('camerasDetail.viewAll') }}</el-button>
             </div>
-          </template>
+</template>
           <div class="snapshot-grid" v-if="recentSnapshots.length > 0">
             <div class="snapshot-item" v-for="snap in recentSnapshots" :key="snap.id">
               <img :src="getSnapshotUrl(snap.file_path)" :alt="snap.timestamp" @error="handleImageError($event)" />
@@ -218,7 +218,7 @@
           </div>
           <div class="empty-state" v-else>
             <el-icon><Picture /></el-icon>
-            <p>暂无抓拍</p>
+            <p>{{ t('camerasDetail.noSnapshots') }}</p>
           </div>
         </el-card>
       </el-col>
@@ -226,7 +226,7 @@
   </div>
   <div class="loading-full" v-else>
     <el-icon class="loading-spinner"><Loading /></el-icon>
-    <p>加载摄像头信息中...</p>
+    <p>{{ t('camerasDetail.loadingCamera') }}</p>
   </div>
 </template>
 
@@ -241,8 +241,11 @@ import {
   Picture, Edit
 } from '@element-plus/icons-vue'
 import Hls from 'hls.js'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api'
 import { useCameraStore } from '@/stores'
+
+const { t, locale } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -253,7 +256,7 @@ const videoContainer = ref<HTMLElement>()
 const videoPlayer = ref<HTMLVideoElement>()
 const videoLoading = ref(true)
 const videoError = ref<string>('')
-// 预览源码流：sub=子码流(流畅，默认省资源) / main=主码流(高清，高配机器)
+
 const previewStream = ref<'sub' | 'main'>('sub')
 const isFullscreen = ref(false)
 const isMuted = ref(true)
@@ -269,12 +272,10 @@ const recentSnapshots = ref<any[]>([])
 const ptzSpeed = ref(0.5)
 const ptzTimer = ref<any>(null)
 
-const statusMap = { online: '在线', offline: '离线', error: '异常' }
 
-// 录像模式显示（详情页展示摄像头当前录像模式）
-const recordTypeLabel = (t: string) => {
-  const m: Record<string, string> = { continuous: '连续录像', motion: '移动侦测录像', schedule: '定时录像' }
-  return m[t] || t || '连续录像'
+const recordTypeLabel = (type: string) => {
+  const known = ['continuous', 'motion', 'schedule']
+  return known.includes(type) ? t('camerasDetail.recordType.' + type) : (type || t('camerasDetail.recordType.continuous'))
 }
 const recordTypeTagType = (t: string) => {
   const m: Record<string, string> = { continuous: 'success', motion: 'warning', schedule: 'primary' }
@@ -284,10 +285,10 @@ const goEdit = () => {
   if (camera.value) router.push(`/cameras/edit/${camera.value.id}`)
 }
 
-const formatTime = (time: string) => time ? new Date(time).toLocaleString('zh-CN') : '-'
+const formatTime = (time: string) => time ? new Date(time).toLocaleString(locale.value === 'en' ? 'en-US' : 'zh-CN') : '-'
 const formatDuration = (sec: number) => {
   const m = Math.floor(sec / 60), s = sec % 60
-  return `${m}分${s}秒`
+  return t('camerasDetail.duration', { m, s })
 }
 const formatBytes = (bytes: number) => {
   if (!bytes) return '0 B'
@@ -297,8 +298,8 @@ const formatBytes = (bytes: number) => {
 }
 
 const getSnapshotUrl = (path: string) => {
-  // 文件路径 recordings/camera_N/snapshot_N_XXX.jpg
-  // -> /api/v1/stream/camera/N/snapshots/snapshot_N_XXX.jpg
+
+
   const name = (path || '').split('/').pop()
   if (!camera.value) return ''
   const token = localStorage.getItem('token') || ''
@@ -311,19 +312,19 @@ const loadCameraDetail = async () => {
     const res = await api.cameras.get(Number(route.params.id))
     camera.value = res.data || res
     isRecording.value = camera.value.record_enabled
-    // 预览码流：优先用户上次的选择（localStorage），否则跟随服务端全局默认
+
     const savedStream = localStorage.getItem(`previewStream_${camera.value.id}`)
     if (savedStream === 'main' || savedStream === 'sub') {
       previewStream.value = savedStream
     } else if (camera.value.preview_default === 'main' || camera.value.preview_default === 'sub') {
       previewStream.value = camera.value.preview_default
     }
-    // 等待 v-if="camera" 区域渲染出 <video> 元素后再初始化播放器
+
     await nextTick()
     initPlayer()
     loadRecentData()
   } catch (e) {
-    ElMessage.error('获取摄像头详情失败')
+    ElMessage.error(t('camerasDetail.loadDetailFailed'))
     router.push('/cameras')
   }
 }
@@ -340,7 +341,7 @@ const loadRecentData = async () => {
 }
 
 let hls: Hls | null = null
-let hlsFatalRetries = 0 // 连续 fatal 错误恢复次数（MANIFEST_PARSED 成功后清零）
+let hlsFatalRetries = 0
 
 const initPlayer = async () => {
   if (!camera.value || !videoPlayer.value) return
@@ -348,7 +349,7 @@ const initPlayer = async () => {
   videoLoading.value = true
   videoError.value = ''
 
-  // 销毁旧实例
+
   if (hls) {
     hls.destroy()
     hls = null
@@ -369,34 +370,34 @@ const initPlayer = async () => {
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       videoPlayer.value?.play().catch(() => {})
       videoLoading.value = false
-      hlsFatalRetries = 0 // 播放恢复正常，重置重试计数
+      hlsFatalRetries = 0
     })
 
     hls.on(Hls.Events.ERROR, (_, data) => {
       if (!data.fatal) return
-      // fatal 错误先尝试恢复（预览流空闲回收后重启、网络抖动等场景），
-      // 多次恢复失败才判定为真正故障，避免一次错误就黑屏卡死
+
+
       if (hlsFatalRetries < 3) {
         hlsFatalRetries++
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-          hls?.startLoad() // 网络错误（如分段 404/播放列表加载失败）：重新拉流
+          hls?.startLoad()
         } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-          hls?.recoverMediaError() // 解码/媒体错误：重建 media 元素
+          hls?.recoverMediaError()
         } else {
-          // 其他错误：整体重建播放器
+
           hls?.destroy()
           hls = null
           initPlayer()
         }
         return
       }
-      videoError.value = '视频流加载失败，请检查摄像头连接'
+      videoError.value = t('camerasDetail.streamLoadFailed')
       videoLoading.value = false
       hls?.destroy()
       hls = null
     })
 
-    // 监控统计
+
     setInterval(() => {
       if (hls && videoPlayer.value && !videoPlayer.value.paused) {
         const bandwidth = hls.bandwidthEstimate
@@ -414,13 +415,13 @@ const initPlayer = async () => {
       videoLoading.value = false
     })
   } else {
-    videoError.value = '浏览器不支持 HLS 播放，请使用现代浏览器'
+    videoError.value = t('camerasDetail.hlsNotSupported')
     videoLoading.value = false
   }
 }
 
 const onVideoLoad = () => { videoLoading.value = false }
-const handleVideoError = () => { videoError.value = '视频播放出错，请尝试重连' }
+const handleVideoError = () => { videoError.value = t('camerasDetail.playError') }
 
 const toggleFullscreen = () => {
   if (!videoContainer.value) return
@@ -443,12 +444,12 @@ const toggleRecord = async () => {
   if (!camera.value) return
   recordLoading.value = true
   try {
-    // 传完整对象，避免后端 ShouldBindJSON 将未提交字段置零
+
     await api.cameras.update(camera.value.id, { ...camera.value, record_enabled: !camera.value.record_enabled })
     camera.value.record_enabled = !camera.value.record_enabled
     isRecording.value = camera.value.record_enabled
-    ElMessage.success(isRecording.value ? '已开始录像' : '已停止录像')
-  } catch (e) { ElMessage.error('操作失败') }
+    ElMessage.success(isRecording.value ? t('camerasDetail.recordStarted') : t('camerasDetail.recordStopped'))
+  } catch (e) { ElMessage.error(t('camerasDetail.opFailed')) }
   finally { recordLoading.value = false }
 }
 
@@ -457,14 +458,13 @@ const takeSnapshot = async () => {
   snapshotLoading.value = true
   try {
     await api.cameras.snapshot(camera.value.id)
-    ElMessage.success('抓拍成功')
+    ElMessage.success(t('camerasDetail.snapshotSuccess'))
     loadRecentData()
-  } catch (e) { ElMessage.error('抓拍失败') }
+  } catch (e) { ElMessage.error(t('camerasDetail.snapshotFailed')) }
   finally { snapshotLoading.value = false }
 }
 
-// 预览码流切换（子码流/主码流）：持久化选择并用新 URL 重载 HLS 源。
-// 后端检测到码流变化会自动停旧启新（分段序号连续，hls.js 无缝续播）。
+
 const onStreamChange = (val: 'sub' | 'main') => {
   if (!camera.value) return
   previewStream.value = val
@@ -481,9 +481,9 @@ const restartStream = async () => {
   restartLoading.value = true
   try {
     await api.cameras.restart(camera.value.id)
-    ElMessage.success('重连请求已发送')
+    ElMessage.success(t('camerasDetail.restartRequestSent'))
     setTimeout(initPlayer, 3000)
-  } catch (e) { ElMessage.error('重连失败') }
+  } catch (e) { ElMessage.error(t('camerasDetail.restartFailed')) }
   finally { restartLoading.value = false }
 }
 
@@ -494,7 +494,7 @@ const ptzStart = (command: string) => {
       await api.cameras.ptz(camera.value.id, command, ptzSpeed.value)
     } catch (e: any) {
       if (e?.response?.status === 400) {
-        // 后端判定不支持 PTZ：停止重试、不再发送 stop，控件区转为提示
+
         if (ptzTimer.value) { clearInterval(ptzTimer.value); ptzTimer.value = null }
         camera.value.ptz_supported = false
       } else {
@@ -510,8 +510,8 @@ const ptzStop = () => {
     clearInterval(ptzTimer.value)
     ptzTimer.value = null
   }
-  // 仅当 PTZ 实际运动中才下发停止指令；
-  // 避免离开页面时对不支持 PTZ 的摄像头发出无效请求触发错误提示
+
+
   if (camera.value && wasMoving) {
     api.cameras.ptz(camera.value.id, 'stop', 0).catch(() => {})
   }

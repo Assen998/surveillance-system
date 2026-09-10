@@ -28,7 +28,7 @@ type Manager struct {
 	mu       sync.Mutex
 	stats    StorageStats
 	runtime  *RuntimeStorage
-	cleanupMu sync.Mutex // 防止定时清理与手动清理并发执行
+	cleanupMu sync.Mutex
 }
 
 type StorageStats struct {
@@ -60,12 +60,12 @@ func NewManager(cfg *config.Config) *Manager {
 	}
 }
 
-// SetRuntimeStorage 注入运行时存储设置（设置页热更新）
+
 func (m *Manager) SetRuntimeStorage(r *RuntimeStorage) {
 	m.runtime = r
 }
 
-// local 返回当前生效的本地存储配置（运行时优先，未注入则用启动配置）
+
 func (m *Manager) local() config.LocalStorageConfig {
 	if m.runtime != nil {
 		return m.runtime.GetLocal()
@@ -73,7 +73,7 @@ func (m *Manager) local() config.LocalStorageConfig {
 	return m.cfg.Storage.Local
 }
 
-// webdav 返回当前生效的 WebDAV 配置（运行时优先，未注入则用启动配置）
+
 func (m *Manager) webdav() config.WebdavConfig {
 	if m.runtime != nil {
 		return m.runtime.GetWebdav()
@@ -81,7 +81,7 @@ func (m *Manager) webdav() config.WebdavConfig {
 	return m.cfg.Storage.Webdav
 }
 
-// minio 返回当前生效的 MinIO 配置（运行时优先，未注入则用启动配置）
+
 func (m *Manager) minio() config.MinIOConfig {
 	if m.runtime != nil {
 		return m.runtime.GetMinIO()
@@ -95,7 +95,7 @@ func (m *Manager) Start() error {
 		return nil
 	}
 
-	// 确保根目录存在
+
 	if err := os.MkdirAll(m.cfg.Storage.Local.RootPath, 0755); err != nil {
 		return fmt.Errorf("创建存储根目录失败: %w", err)
 	}
@@ -123,7 +123,7 @@ func (m *Manager) cleanupLoop() {
 	ticker := time.NewTicker(time.Duration(m.cfg.Storage.Local.CleanupInterval) * time.Second)
 	defer ticker.Stop()
 
-	// 启动时执行一次清理
+
 	m.cleanup()
 
 	for {
@@ -142,7 +142,7 @@ func (m *Manager) cleanup() {
 	m.doCleanup()
 }
 
-// TriggerCleanup 手动触发一次完整清理（含容量上限检查），存储页"立即清理"按钮调用
+
 func (m *Manager) TriggerCleanup() {
 	m.cleanup()
 }
@@ -152,16 +152,16 @@ func (m *Manager) doCleanup() {
 	if loc.Enabled {
 		m.doCleanupLocal(loc)
 	}
-	// WebDAV 独立清理（远程保留天数 / 容量上限），与本地清理相互独立
+
 	m.doCleanupWebdav()
-	// MinIO 独立清理（远程保留天数 / 容量上限），与本地清理相互独立
+
 	m.doCleanupMinio()
 }
 
 func (m *Manager) doCleanupLocal(loc config.LocalStorageConfig) {
 	cutoff := time.Now().AddDate(0, 0, -loc.MaxDays)
 
-	// 1. 数据库层面：查找过期录像（按保留天数）
+
 	var expiredRecordings []models.Recording
 	if err := m.db.Where("end_time < ? AND storage_type = 'local' AND deleted_at IS NULL", cutoff).
 		Find(&expiredRecordings).Error; err != nil {
@@ -176,7 +176,7 @@ func (m *Manager) doCleanupLocal(loc config.LocalStorageConfig) {
 		if size := m.deleteRecordingLocalFiles(&rec); size > 0 {
 			deletedSize += size
 		}
-		// 标记数据库记录为已删除
+
 		if err := m.db.Delete(&rec).Error; err != nil {
 			logrus.Errorf("删除录像记录失败: %v", err)
 		} else {
@@ -184,10 +184,10 @@ func (m *Manager) doCleanupLocal(loc config.LocalStorageConfig) {
 		}
 	}
 
-	// 2. 清理孤儿文件（数据库中没有记录但文件存在的）
+
 	m.cleanupOrphanFiles()
 
-	// 3. 清理过期抓拍
+
 	var expiredSnapshots []models.Snapshot
 	if err := m.db.Where("timestamp < ? AND storage_type = 'local' AND deleted_at IS NULL", cutoff).
 		Find(&expiredSnapshots).Error; err != nil {
@@ -205,18 +205,13 @@ func (m *Manager) doCleanupLocal(loc config.LocalStorageConfig) {
 		logrus.Infof("存储清理完成: 删除 %d 个录像片段, 释放 %s", deletedCount, formatBytes(deletedSize))
 	}
 
-	// 4. 存储占用上限（与保留天数并行，谁先达到先清理）
+
 	if loc.MaxStorageGB > 0 {
 		m.enforceMaxStorage(loc)
 	}
 }
 
-// doCleanupWebdav WebDAV 远程存储独立清理：
-// - 按 WebDAV 独立的保留天数删除过期远程文件
-// - 按 WebDAV 独立的容量上限（GB）从最旧文件开始删除
-// 二者为 0 时跳过对应检查；均不启用则直接返回。
-// 说明：本地清理删除的是本地文件与数据库记录，不影响远端的 WebDAV 副本；
-// 因此 WebDAV 端必须用它自己的保留策略做独立清理。
+
 func (m *Manager) doCleanupWebdav() {
 	wd := m.webdav()
 	if !wd.Enabled || wd.URL == "" {
@@ -266,10 +261,10 @@ func (m *Manager) doCleanupWebdav() {
 	}
 
 	now := time.Now()
-	// 保护窗口：刚上传的文件（模时间在 10 分钟内）不参与清理，避免误删仍在写入的分段
+
 	protectWindow := 10 * time.Minute
 
-	// 1. 按保留天数清理
+
 	deleted := 0
 	var released int64
 	deletedPaths := make(map[string]bool)
@@ -288,7 +283,7 @@ func (m *Manager) doCleanupWebdav() {
 		}
 	}
 
-	// 2. 按容量上限清理（从最旧开始删，直到回到上限以内）
+
 	if wd.MaxStorageGB > 0 {
 		var total int64
 		for _, f := range files {
@@ -327,10 +322,7 @@ func (m *Manager) doCleanupWebdav() {
 	}
 }
 
-// doCleanupMinio MinIO 远程存储独立清理（与 WebDAV 清理逻辑一致）：
-// - 按 MinIO 独立的保留天数删除过期对象
-// - 按 MinIO 独立的容量上限（GB）从最旧对象开始删除
-// 二者为 0 时跳过对应检查；未启用则直接返回。
+
 func (m *Manager) doCleanupMinio() {
 	mn := m.minio()
 	if !mn.Enabled || mn.Endpoint == "" || mn.Bucket == "" {
@@ -357,7 +349,7 @@ func (m *Manager) doCleanupMinio() {
 	}
 
 	now := time.Now()
-	// 保护窗口：刚上传的对象（修改时间在 10 分钟内）不参与清理，避免误删仍在写入的分段
+
 	protectWindow := 10 * time.Minute
 
 	deleted := 0
@@ -413,7 +405,7 @@ func (m *Manager) doCleanupMinio() {
 	}
 }
 
-// deleteRecordingLocalFiles 删除录像的本地文件（主文件+索引文件），返回主文件大小
+
 func (m *Manager) deleteRecordingLocalFiles(rec *models.Recording) int64 {
 	size := int64(0)
 	if rec.FilePath != "" {
@@ -431,8 +423,7 @@ func (m *Manager) deleteRecordingLocalFiles(rec *models.Recording) int64 {
 	return size
 }
 
-// enforceMaxStorage 存储占用上限：根目录总占用超过上限时，从最旧的已完成录像开始删除，
-// 直到占用回落到上限以内。正在写入的分段尚未入库，不会被误删。
+
 func (m *Manager) enforceMaxStorage(loc config.LocalStorageConfig) {
 	limitBytes := int64(loc.MaxStorageGB * 1024 * 1024 * 1024)
 	if limitBytes <= 0 {
@@ -471,7 +462,7 @@ func (m *Manager) enforceMaxStorage(loc config.LocalStorageConfig) {
 		count++
 	}
 
-	// 仍超限：删除孤儿分段文件（流中断遗留、无数据库记录的 mp4/idx）
+
 	if used-released > limitBytes {
 		if orphanReleased, orphanCount := m.cleanupOrphanSegments(loc.RootPath, 5*time.Minute); orphanCount > 0 {
 			released += orphanReleased
@@ -482,8 +473,7 @@ func (m *Manager) enforceMaxStorage(loc config.LocalStorageConfig) {
 	logrus.Infof("容量清理完成: 删除 %d 个录像片段, 释放约 %s", count, formatBytes(released))
 }
 
-// cleanupOrphanSegments 删除无数据库记录的分段文件（mp4/idx）。
-// protectWindow 内修改过的文件受保护——正在写入的分段或刚写完尚未入库的分段。
+
 func (m *Manager) cleanupOrphanSegments(root string, protectWindow time.Duration) (int64, int) {
 	var released int64
 	count := 0
@@ -513,7 +503,7 @@ func (m *Manager) cleanupOrphanSegments(root string, protectWindow time.Duration
 	return released, count
 }
 
-// dirSize 递归统计目录下普通文件总大小
+
 func dirSize(dir string) int64 {
 	var total int64
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -551,7 +541,7 @@ func (m *Manager) cleanupOrphanFiles() {
 
 			filePath := filepath.Join(cameraDir, f.Name())
 
-			// 检查数据库中是否存在
+
 			var count int64
 			m.db.Model(&models.Recording{}).Where("file_path = ?", filePath).Count(&count)
 			if count == 0 {
@@ -559,7 +549,7 @@ func (m *Manager) cleanupOrphanFiles() {
 			}
 
 			if count == 0 {
-				// 孤儿文件，检查修改时间是否超过保留期
+
 				info, _ := f.Info()
 				if time.Since(info.ModTime()) > time.Duration(loc.MaxDays)*24*time.Hour {
 					os.Remove(filePath)
@@ -592,7 +582,7 @@ func (m *Manager) updateStats() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 磁盘空间（跨平台：unix 用 Statfs，windows 用 GetDiskFreeSpaceEx）
+
 	total, free, err := diskUsage(m.local().RootPath)
 	if err != nil {
 		logrus.Warnf("获取磁盘空间失败: %v", err)
@@ -602,7 +592,7 @@ func (m *Manager) updateStats() {
 		m.stats.UsedSpace = m.stats.TotalSpace - m.stats.FreeSpace
 	}
 
-	// 录像统计
+
 	var recordings []models.Recording
 	m.db.Where("storage_type = 'local' AND deleted_at IS NULL").Find(&recordings)
 	m.stats.RecordingCount = int64(len(recordings))
@@ -611,7 +601,7 @@ func (m *Manager) updateStats() {
 	m.db.Where("storage_type = 'local' AND deleted_at IS NULL").Find(&snapshots)
 	m.stats.SnapshotCount = int64(len(snapshots))
 
-	// 按摄像头统计
+
 	cameraStats := make(map[uint]CameraStorageStat)
 	for _, rec := range recordings {
 		stat := cameraStats[rec.CameraID]
@@ -630,7 +620,7 @@ func (m *Manager) updateStats() {
 		cameraStats[rec.CameraID] = stat
 	}
 
-	// 补充摄像头名称
+
 	var cameras []models.Camera
 	m.db.Find(&cameras)
 	for _, cam := range cameras {
@@ -649,7 +639,7 @@ func (m *Manager) GetStats() StorageStats {
 	return m.stats
 }
 
-// RecordingManager 录像查询管理
+
 type RecordingManager struct {
 	db *gorm.DB
 }
@@ -690,7 +680,7 @@ func (rm *RecordingManager) GetRecordingByID(id uint) (*models.Recording, error)
 	return &rec, err
 }
 
-// DeleteRecording 软删除录像记录
+
 func (rm *RecordingManager) DeleteRecording(id uint) error {
 	return rm.db.Delete(&models.Recording{}, id).Error
 }
@@ -711,7 +701,7 @@ func (rm *RecordingManager) GetLatestRecording(cameraID uint) (*models.Recording
 	return &rec, err
 }
 
-// SnapshotManager 抓拍查询管理
+
 type SnapshotManager struct {
 	db *gorm.DB
 }

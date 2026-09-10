@@ -12,12 +12,11 @@ import (
 	"github.com/yourorg/surveillance-system/internal/config"
 )
 
-// fakeWebdavServer 模拟一个能 PROPFIND / DELETE 的 WebDAV 服务器。
-// 使用扁平的"/surveillance/xxx.mp4"结构，按 URL 路径部分作为键。
+
 type fakeWebdavServer struct {
 	mu      sync.Mutex
-	files   map[string]int64         // 路径(不含host) -> size
-	mtimes  map[string]time.Time     // 路径 -> last-mod
+	files   map[string]int64
+	mtimes  map[string]time.Time
 	deleted []string
 }
 
@@ -35,7 +34,7 @@ func (f *fakeWebdavServer) handler(w http.ResponseWriter, r *http.Request) {
 		defer f.mu.Unlock()
 		var sb strings.Builder
 		sb.WriteString(`<?xml version="1.0" encoding="utf-8"?><multistatus xmlns="DAV:">`)
-		// 集合自身
+
 		sb.WriteString(`<response><href>` + r.URL.Path + `</href><propstat><prop><resourcetype><collection/></resourcetype></prop></propstat></response>`)
 		for p, sz := range f.files {
 			if !strings.HasPrefix(p, r.URL.Path) {
@@ -107,13 +106,13 @@ func TestWebdavCleanupCapacity(t *testing.T) {
 	defer ts.Close()
 
 	now := time.Now()
-	// 三个文件，都未超过保留天数，但总量 3000 字节超过 1500 字节上限
+
 	f.record("/surveillance/a.mp4", 1000, now.AddDate(0, 0, -3))
 	f.record("/surveillance/b.mp4", 1000, now.AddDate(0, 0, -2))
 	f.record("/surveillance/c.mp4", 1000, now.AddDate(0, 0, -1))
 
 	m := &Manager{}
-	// 1500 字节 ≈ 1.397e-6 GB
+
 	m.runtime = &RuntimeStorage{webdav: config.WebdavConfig{
 		Enabled: true, URL: ts.URL, BasePath: "surveillance", MaxDays: 0, MaxStorageGB: 1500.0 / 1073741824.0,
 	}}
@@ -121,7 +120,7 @@ func TestWebdavCleanupCapacity(t *testing.T) {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	// 最旧的 a.mp4、b.mp4 应被删除（容量清理），最新的 c.mp4 应保留
+
 	if _, ok := f.files["/surveillance/a.mp4"]; ok {
 		t.Errorf("a.mp4（最旧）应被容量清理删除")
 	}

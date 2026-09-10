@@ -10,7 +10,7 @@ import (
 func TestMapTopicToAlert(t *testing.T) {
 	cases := []struct {
 		topic string
-		want  string // alertType
+		want  string
 	}{
 		{"RuleEngine/MotionRegionDetector/Motion", models.AlertTypeMotion},
 		{"RuleEngine/LineDetector/Crossed", models.AlertTypeLineCross},
@@ -44,14 +44,14 @@ func TestMapTopicNonAlarmIgnored(t *testing.T) {
 			t.Errorf("非报警主题 %q 应被忽略，但被当作报警", topic)
 		}
 	}
-	// 完全未知的主题也不应误报为报警
+
 	if _, _, isAlarm := mapTopicToAlert("SomeUnknown/Topic"); isAlarm {
 		t.Errorf("未知主题不应被当作报警")
 	}
 }
 
 func TestMapTopicLevel(t *testing.T) {
-	// 越线/入侵应为 high，运动为 medium
+
 	if _, lvl, _ := mapTopicToAlert("RuleEngine/LineDetector/Crossed"); lvl != models.AlertLevelHigh {
 		t.Errorf("越线报警等级应为 high, got %s", lvl)
 	}

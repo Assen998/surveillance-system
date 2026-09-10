@@ -6,9 +6,7 @@ import (
 	"github.com/yourorg/surveillance-system/internal/config"
 )
 
-// RuntimeStorage 运行时存储设置。
-// 设置页保存后立即生效（分段时长对新连接/重连的摄像头生效，
-// 清理与上传使用最新值），无需重启服务。
+
 type RuntimeStorage struct {
 	mu     sync.RWMutex
 	local  config.LocalStorageConfig

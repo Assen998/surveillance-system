@@ -4,7 +4,7 @@ package api
 
 import "syscall"
 
-// diskUsageMB 返回目录所在分区的磁盘用量（MB）
+
 func diskUsageMB(path string) (totalMB, usedMB int64) {
 	st := new(syscall.Statfs_t)
 	if err := syscall.Statfs(path, st); err != nil {

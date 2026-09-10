@@ -3,7 +3,7 @@
     <el-card :shadow="never">
       <template #header>
         <h3>系统操作</h3>
-      </template>
+</template>
       <div class="maintenance-actions">
         <el-button type="danger" @click="restartSystem" :loading="restartLoading">
           <el-icon><Refresh /></el-icon> 重启系统
@@ -29,7 +29,7 @@
       <div class="update-info" v-if="updateInfo">
         <template v-if="updateInfo.error">
           <el-alert :title="updateInfo.error" type="warning" :closable="false" show-icon />
-        </template>
+</template>
         <template v-else>
           <p>当前版本 <b>v{{ updateInfo.current_version }}</b>　→　最新版本 <b>v{{ updateInfo.latest_version }}</b>
             <el-tag v-if="updateInfo.has_update" type="success" size="small">可更新</el-tag>
@@ -40,7 +40,7 @@
             <span v-if="updateInfo.published_at" class="text-muted">发布于 {{ new Date(updateInfo.published_at).toLocaleString('zh-CN') }}</span>
           </p>
           <div class="release-notes" v-if="updateInfo.release_notes">{{ updateInfo.release_notes }}</div>
-        </template>
+</template>
       </div>
     </el-card>
 
@@ -52,7 +52,7 @@
             <el-icon v-if="!envLoading"><Refresh /></el-icon> 运行环境检测
           </el-button>
         </div>
-      </template>
+</template>
       <EnvCheckTable :report="envReport" :loading="envLoading" />
     </el-card>
 
@@ -62,7 +62,7 @@
           <h3>数据库备份</h3>
           <el-button size="small" @click="loadBackups"><el-icon><Refresh /></el-icon></el-button>
         </div>
-      </template>
+</template>
       <el-table :data="backupFiles" size="small" v-loading="backupLoading" style="width: 100%">
         <el-table-column prop="name" label="文件" min-width="220" />
         <el-table-column label="大小" width="110">
@@ -79,7 +79,7 @@
             <el-button size="small" type="danger" plain @click="deleteBackupFile(scope.row.name)">
               <el-icon><Delete /></el-icon> 删除
             </el-button>
-          </template>
+</template>
         </el-table-column>
       </el-table>
       <el-empty v-if="!backupFiles.length && !backupLoading" description="暂无备份，点「备份数据库」创建一个" :image-size="60" />
@@ -101,7 +101,7 @@
             <el-button size="small" type="danger" plain @click="doClearLogs" :loading="clearLogsLoading">清空</el-button>
           </div>
         </div>
-      </template>
+</template>
       <p class="log-meta" v-if="logMeta.file">
         {{ logMeta.file }} · {{ formatBytes(logMeta.size) }} · 显示最近 {{ logMeta.total }} 行
         <span class="text-muted" v-if="logFiles.length">（轮转文件 {{ logFiles.length - 1 }} 份，共 {{ formatBytes(logFilesTotalSize) }}）</span>
@@ -112,7 +112,7 @@
     <el-card :shadow="never" class="mt-16">
       <template #header>
         <h3>系统信息</h3>
-      </template>
+</template>
       <div class="system-info" v-if="sysInfo">
         <div class="info-grid">
           <div class="info-item"><span class="label">版本</span><span class="value">v{{ sysInfo.version }}<span class="text-muted" v-if="sysInfo.git_commit && sysInfo.git_commit !== 'unknown'"> ({{ sysInfo.git_commit }})</span></span></div>
@@ -147,7 +147,7 @@ const backupLoading = ref(false)
 const clearLogsLoading = ref(false)
 const sysInfo = ref<any>(null)
 
-// 运行环境检测
+
 const envReport = ref<any>(null)
 const envLoading = ref(false)
 const loadEnv = async () => {
@@ -155,24 +155,24 @@ const loadEnv = async () => {
   try {
     envReport.value = await api.system.envCheck()
   } catch (e) {
-    // 错误提示由响应拦截器统一处理
+
     console.error(e)
   } finally {
     envLoading.value = false
   }
 }
 
-// 程序更新
+
 const updateChecking = ref(false)
 const updating = ref(false)
 const updateInfo = ref<any>(null)
 const updateCfg = reactive({ proxy: '' })
 const updateCfgSaving = ref(false)
 
-// 数据库备份
+
 const backupFiles = ref<any[]>([])
 
-// 日志查看器
+
 const logLines = ref(100)
 const logKeyword = ref('')
 const logAutoRefresh = ref(true)
@@ -208,7 +208,7 @@ const restartSystem = async () => {
   }
 }
 
-// 数据库备份
+
 const loadBackups = async () => {
   backupLoading.value = true
   try {
@@ -255,7 +255,7 @@ const deleteBackupFile = async (name: string) => {
   } catch (e) { ElMessage.error('删除失败') }
 }
 
-// 运行日志
+
 const loadLogTail = async () => {
   logLoading.value = !logText.value
   try {
@@ -273,7 +273,7 @@ const loadLogFiles = async () => {
   try {
     const res: any = await api.system.logFiles()
     logFiles.value = res.files || []
-  } catch (e) { /* 忽略 */ }
+  } catch (e) {  }
 }
 
 const doClearLogs = async () => {
@@ -292,7 +292,7 @@ const doClearLogs = async () => {
   }
 }
 
-// 程序更新
+
 const checkForUpdate = async () => {
   updateChecking.value = true
   updateInfo.value = null
@@ -329,15 +329,15 @@ const doUpdate = async () => {
 }
 
 const viewSystemInfo = async () => {
-  try { sysInfo.value = await api.system.info() } catch (e) { /* 忽略 */ }
+  try { sysInfo.value = await api.system.info() } catch (e) {  }
 }
 
-// 更新代理设置
+
 const loadUpdateCfg = async () => {
   try {
     const res: any = await api.system.getUpdateConfig()
     updateCfg.proxy = res.proxy || ''
-  } catch (e) { /* 忽略 */ }
+  } catch (e) {  }
 }
 
 const saveUpdateCfg = async () => {

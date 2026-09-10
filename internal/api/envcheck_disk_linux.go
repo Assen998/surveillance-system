@@ -4,7 +4,7 @@ package api
 
 import "syscall"
 
-// diskFreeBytes 返回目录所在分区的可用空间（字节）。Linux 实现。
+
 func diskFreeBytes(dir string) (int64, error) {
 	var st syscall.Statfs_t
 	if err := syscall.Statfs(dir, &st); err != nil {

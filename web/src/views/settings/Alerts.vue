@@ -3,7 +3,7 @@
     <el-card :shadow="never" class="mb-16">
       <template #header>
         <h3>Webhook 配置 (钉钉/飞书/企业微信/Gotify)</h3>
-      </template>
+</template>
       <el-form :model="webhookForm" label-width="140">
         <el-form-item label="启用 Webhook">
           <el-switch v-model="webhookForm.enabled" />
@@ -32,7 +32,7 @@
     <el-card :shadow="never" class="mb-16">
       <template #header>
         <h3>邮件通知配置</h3>
-      </template>
+</template>
       <el-form :model="emailForm" label-width="140">
         <el-form-item label="启用邮件通知">
           <el-switch v-model="emailForm.enabled" />
@@ -65,7 +65,7 @@
     <el-card :shadow="never" class="mb-16">
       <template #header>
         <h3>短信通知配置</h3>
-      </template>
+</template>
       <el-form :model="smsForm" label-width="140">
         <el-form-item label="启用短信通知">
           <el-switch v-model="smsForm.enabled" />
@@ -98,7 +98,7 @@
     <el-card :shadow="never">
       <template #header>
         <h3>报警推送测试</h3>
-      </template>
+</template>
       <div class="test-actions">
         <el-button type="primary" @click="sendTestAlert('webhook')" :loading="testLoading.webhook">
           <el-icon><Bell /></el-icon> 测试 Webhook

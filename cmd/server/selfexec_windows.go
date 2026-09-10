@@ -8,8 +8,7 @@ import (
 	"syscall"
 )
 
-// Windows 无 syscall.Exec；退而求其次：启动分离的新进程后退出当前进程。
-// （主要部署目标是 Linux，此为兜底，保证 Windows 可编译。）
+
 func selfExec(path string, args []string, env []string) error {
 	cmd := exec.Command(path, args...)
 	cmd.Env = env

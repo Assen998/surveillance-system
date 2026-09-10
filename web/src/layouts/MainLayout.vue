@@ -3,7 +3,7 @@
     <el-aside :width="isCollapse ? '64px' : '240px'" class="sidebar">
       <div class="logo-container">
         <el-icon class="logo-icon" v-if="!isCollapse"><VideoCamera /></el-icon>
-        <span v-if="!isCollapse" class="logo-text">监控系统</span>
+        <span v-if="!isCollapse" class="logo-text">{{ t('layout.system') }}</span>
       </div>
       <el-menu
         :default-active="activeMenu"
@@ -16,18 +16,18 @@
         <template v-for="route in filteredRoutes" :key="route.fullPath">
           <el-menu-item v-if="!route.children || route.children.length === 0" :index="route.fullPath">
             <el-icon><component :is="route.meta.icon || 'Folder'" /></el-icon>
-            <template v-if="!isCollapse">{{ route.meta.title }}</template>
+            <template v-if="!isCollapse">{{ t(route.meta.title as string) }}</template>
           </el-menu-item>
           <el-sub-menu v-else :index="route.fullPath">
             <template #title>
               <el-icon><component :is="route.meta.icon || 'Folder'" /></el-icon>
-              <template v-if="!isCollapse">{{ route.meta.title }}</template>
+              <template v-if="!isCollapse">{{ t(route.meta.title as string) }}</template>
             </template>
             <template v-for="child in route.children" :key="child.fullPath">
               <el-menu-item v-if="!child.meta.hideInMenu" :index="child.fullPath">
-                {{ child.meta.title }}
+                {{ t(child.meta.title as string) }}
               </el-menu-item>
-            </template>
+</template>
           </el-sub-menu>
         </template>
       </el-menu>
@@ -43,6 +43,19 @@
           <h1 class="page-title">{{ pageTitle }}</h1>
         </div>
         <div class="header-right">
+          <el-dropdown trigger="click" class="lang-dropdown" @command="switchLang">
+            <span class="lang-switch">
+              <el-icon><Position /></el-icon>
+              <span>{{ currentLangLabel }}</span>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="l in SUPPORTED_LANGS" :key="l.value" :command="l.value" :disabled="l.value === lang">
+                  {{ l.label }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+</template>
+          </el-dropdown>
           <el-dropdown trigger="click">
             <span class="user-info">
               <el-icon><User /></el-icon>
@@ -53,10 +66,10 @@
               <el-dropdown-menu>
                 <el-dropdown-item @click="logout">
                   <el-icon><SwitchButton /></el-icon>
-                  退出登录
+                  {{ t('layout.logout') }}
                 </el-dropdown-item>
               </el-dropdown-menu>
-            </template>
+</template>
           </el-dropdown>
         </div>
       </el-header>
@@ -66,7 +79,7 @@
       </el-main>
 
       <el-footer class="app-footer" height="36px">
-        <span class="footer-item">监控录像系统<b v-if="version" class="footer-version"> v{{ version }}</b></span>
+        <span class="footer-item">{{ t('layout.footer.app') }}<b v-if="version" class="footer-version"> v{{ version }}</b></span>
         <a class="footer-item footer-link" href="https://github.com/Assen998/surveillance-system" target="_blank" rel="noopener noreferrer">
           <el-icon><Link /></el-icon> github.com/Assen998/surveillance-system
         </a>
@@ -80,16 +93,23 @@ import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   VideoCamera, Folder, Monitor, Film, Cpu, Memo, Setting,
-  Menu, Fold, Expand, User, ArrowDown, SwitchButton, Link
+  Menu, Fold, Expand, User, ArrowDown, SwitchButton, Link, Position
 } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
+import { setLang, SUPPORTED_LANGS } from '@/i18n'
 
 const router = useRouter()
 const route = useRoute()
+const { t, locale } = useI18n()
+
+const lang = computed(() => locale.value as string)
+const currentLangLabel = computed(() => SUPPORTED_LANGS.find(l => l.value === lang.value)?.label || '中文')
+const switchLang = (v: string) => setLang(v as 'zh' | 'en')
 
 const isCollapse = ref(false)
 const userName = 'admin'
 
-// 页脚版本号（/api/version 不受 JWT 保护）
+
 const version = ref('')
 onMounted(async () => {
   try {
@@ -97,7 +117,7 @@ onMounted(async () => {
     const d = await res.json()
     version.value = d?.version || ''
   } catch (e) {
-    // 版本获取失败不影响主界面
+
   }
 })
 
@@ -108,8 +128,8 @@ const toggleCollapse = () => {
 const filteredRoutes = computed(() => {
   const rootRoute = router.getRoutes().find(r => r.path === '/')
   if (!rootRoute) return []
-  
-  // 为每个路由及其子路由计算完整路径
+
+
   const addFullPath = (routes: any[], parentPath = '') => {
     return routes.map(route => {
       const fullPath = parentPath ? `${parentPath}/${route.path}`.replace(/\/+/g, '/') : `/${route.path}`.replace(/\/+/g, '/')
@@ -120,12 +140,12 @@ const filteredRoutes = computed(() => {
       return routeWithPath
     })
   }
-  
+
   return addFullPath(rootRoute.children || []).filter(r => !r.meta?.hideInMenu)
 })
 
 const activeMenu = computed(() => {
-  // 查找当前路由对应的菜单项 fullPath
+
   const findFullPath = (routes: any[], currentPath: string): string => {
     for (const r of routes) {
       if (r.fullPath === currentPath) return r.fullPath
@@ -141,7 +161,8 @@ const activeMenu = computed(() => {
 
 const pageTitle = computed(() => {
   const matched = route.matched[route.matched.length - 1]
-  return (matched?.meta?.title as string) || '监控系统'
+  const title = matched?.meta?.title as string
+  return title ? t(title) : t('layout.system')
 })
 
 const logout = () => {
@@ -275,6 +296,26 @@ const logout = () => {
   }
 
   .header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .lang-switch {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      color: #606266;
+      font-size: 14px;
+      outline: none;
+
+      &:hover {
+        background: #f5f7fa;
+      }
+    }
+
     .user-info {
       display: flex;
       align-items: center;

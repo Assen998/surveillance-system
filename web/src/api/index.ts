@@ -1,10 +1,10 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
+import i18n from '@/i18n'
 
 const API_BASE = '/api/v1'
 
-// 浏览器通过 <video>/<img>/HLS.js 加载媒体时无法携带 Authorization 头，
-// 因此媒体 URL 通过 ?token= 查询参数附加鉴权令牌。
+
 function mediaUrl(path: string): string {
   const token = localStorage.getItem('token') || ''
   if (!token) return path
@@ -20,30 +20,34 @@ const request: AxiosInstance = axios.create({
   },
 })
 
-// 请求拦截器
+
 request.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('token')
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`
     }
+
+    if (config.headers) {
+      config.headers['Accept-Language'] = i18n.global.locale.value === 'en' ? 'en' : 'zh-CN'
+    }
     return config
   },
   (error) => Promise.reject(error)
 )
 
-// 响应拦截器
+
 request.interceptors.response.use(
   (response: AxiosResponse) => {
     const { data } = response
-    // 后端返回格式: { code: 0, data: ..., message: '' }
+
     if (data.code !== undefined && data.code !== 0) {
-      ElMessage.error(data.message || '请求失败')
+      ElMessage.error(data.message || i18n.global.t('common.failed'))
       return Promise.reject(new Error(data.message))
     }
     if (data.data !== undefined) {
       const result = data.data
-      // 分页列表接口会附加 total；把它挂到返回数组上（非侵入），供分页器读取
+
       if (data.total !== undefined) {
         ;(result as any)._total = data.total
       }
@@ -56,18 +60,18 @@ request.interceptors.response.use(
       localStorage.removeItem('token')
       window.location.href = '/login'
     } else {
-      // 后端错误统一为 {error: "..."} 格式；优先展示可读的业务提示，
-      // 避免一律显示 "Request failed with status code xxx"
+
+
       const msg = error.response?.data?.message || error.response?.data?.error
-      ElMessage.error(msg || error.message || '网络错误')
+      ElMessage.error(msg || error.message || i18n.global.t('common.networkError'))
     }
     return Promise.reject(error)
   }
 )
 
-// API 方法封装
+
 export const api = {
-  // 认证
+
   auth: {
     login: (username: string, password: string) =>
       request.post('/auth/login', { username, password }),
@@ -77,7 +81,7 @@ export const api = {
       request.put('/auth/password', { old_password: oldPass, new_password: newPass }),
   },
 
-  // 用户管理（仅管理员）
+
   users: {
     list: () => request.get('/users'),
     create: (data: any) => request.post('/users', data),
@@ -90,7 +94,7 @@ export const api = {
       request.put(`/users/${id}/permissions`, { permissions }),
   },
 
-  // 摄像头
+
   cameras: {
     list: () => request.get('/cameras'),
     get: (id: number) => request.get(`/cameras/${id}`),
@@ -113,7 +117,7 @@ export const api = {
       request.get('/cameras/probe', { params: { ip, username, password } }),
   },
 
-  // 录像
+
   recordings: {
     list: (params?: any) => request.get('/recordings', { params }),
     get: (id: number) => request.get(`/recordings/${id}`),
@@ -126,9 +130,9 @@ export const api = {
       request.get(`/recordings/camera/${cameraId}/segments`, { params: { start, end } }),
   },
 
-  // 流媒体（浏览器直接加载，需通过 ?token= 携带鉴权令牌）
+
   stream: {
-    // stream: 'main'=主码流(高清) / 'sub'=子码流(流畅)；缺省=跟随服务端全局配置
+
     hlsPlaylist: (cameraId: number, stream?: string) => mediaUrl(`/api/v1/stream/camera/${cameraId}/hls${stream ? `?stream=${stream}` : ''}`),
     hlsSegment: (cameraId: number, file: string) => mediaUrl(`/api/v1/stream/camera/${cameraId}/hls/${file}`),
     mp4: (cameraId: number) => mediaUrl(`/api/v1/stream/camera/${cameraId}/mp4`),
@@ -136,7 +140,7 @@ export const api = {
     recordingHLS: (recordingId: number) => mediaUrl(`/api/v1/stream/camera/recordings/${recordingId}/hls`),
   },
 
-  // 智能分析（报警记录）
+
   analytics: {
     alerts: (params?: any) => request.get('/analytics/alerts', { params }),
     getAlert: (id: number) => request.get(`/analytics/alerts/${id}`),
@@ -146,78 +150,78 @@ export const api = {
     clearAlerts: () => request.delete('/analytics/alerts'),
   },
 
-  // 存储
+
   storage: {
     stats: () => request.get('/storage/stats'),
     cleanup: () => request.post('/storage/cleanup'),
   },
 
-  // WebDAV 远程录像
+
   webdav: {
     list: (cameraId?: number) =>
       request.get('/webdav/list', { params: cameraId ? { camera_id: cameraId } : {} }),
-    // 浏览器 <video> 直接加载，走 ?token= 鉴权（支持 Range）
+
     fileUrl: (path: string) =>
       mediaUrl(`/api/v1/webdav/file?path=${encodeURIComponent(path)}`),
   },
 
-  // MinIO 远程录像
+
   minio: {
     list: (cameraId?: number) =>
       request.get('/minio/list', { params: cameraId ? { camera_id: cameraId } : {} }),
-    // 浏览器 <video> 直接加载，走 ?token= 鉴权（支持 Range）
+
     fileUrl: (path: string) =>
       mediaUrl(`/api/v1/minio/file?path=${encodeURIComponent(path)}`),
   },
 
-  // 抓拍图片（全局列表）
+
   snapshots: {
     list: (params: any) => request.get('/snapshots', { params }),
     remove: (id: number) => request.delete(`/snapshots/${id}`),
     clear: () => request.delete('/snapshots'),
-    // 图片地址：DB 路径 recordings/camera_N/snapshot_N_xxx.jpg
-    // -> /api/v1/stream/camera/N/snapshots/snapshot_N_xxx.jpg?token=...
+
+
     fileUrl: (path: string, cameraId: number) => {
       const name = (path || '').split('/').pop() || ''
       return mediaUrl(`/api/v1/stream/camera/${cameraId}/snapshots/${encodeURIComponent(name)}`)
     },
   },
 
-  // 首次设置（公开接口）
+
   setup: {
     status: () => request.get('/setup/status'),
     create: (data: { username: string; password: string }) =>
       request.post('/setup', data),
   },
 
-  // 报警配置
+
   alerts: {
     config: () => request.get('/alerts/config'),
     updateConfig: (data: any) => request.put('/alerts/config', data),
     test: (channel: string, data?: any) => request.post('/alerts/test', { channel, ...data }),
   },
 
-  // 系统
+
   system: {
     config: () => request.get('/system/config'),
     updateConfig: (data: any) => request.put('/system/config', data),
     info: () => request.get('/system/info'),
     restart: () => request.post('/system/restart'),
-    // 运行环境检测
+
     envCheck: () => request.get('/system/env'),
-    // 日志
+
     logTail: (params: { lines?: number; keyword?: string }) =>
       request.get('/system/logs', { params }),
     logFiles: () => request.get('/system/logs/files'),
     clearLogs: () => request.post('/system/logs/clear'),
-    // 数据库备份
+
     createBackup: () => request.post('/system/backup'),
     listBackups: () => request.get('/system/backups'),
     downloadBackup: (name: string) =>
       request.get(`/system/backups/${encodeURIComponent(name)}/download`, { responseType: 'blob' }),
     deleteBackup: (name: string) =>
       request.delete(`/system/backups/${encodeURIComponent(name)}`),
-    // 程序自更新
+
     checkUpdate: () => request.get('/system/update/check'),
     performUpdate: () => request.post('/system/update', null, { timeout: 600000 }),
     getUpdateConfig: () => request.get('/system/update/config'),
@@ -225,7 +229,7 @@ export const api = {
       request.put('/system/update/config', data),
   },
 
-  // 设置
+
   settings: {
     getStorage: () => request.get('/settings/storage'),
     updateStorage: (data: any) => request.put('/settings/storage', data),

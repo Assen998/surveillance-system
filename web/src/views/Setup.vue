@@ -2,67 +2,67 @@
   <div class="setup-page">
     <div class="setup-card">
       <div class="setup-header">
-        <div class="setup-title">监控录像系统</div>
-        <div class="setup-subtitle">首次运行初始化</div>
+        <div class="setup-title">{{ t("setup.appTitle") }}</div>
+        <div class="setup-subtitle">{{ t("setup.subtitle") }}</div>
       </div>
 
-      <!-- 已完成设置 -->
+
       <el-result
         v-if="!needSetup"
         icon="success"
-        title="初始化设置已完成"
-        sub-title="系统管理员账户已存在，请直接登录"
+        :title="t('setup.doneTitle')"
+        :sub-title="t('setup.doneSubtitle')"
       >
         <template #extra>
-          <el-button type="primary" @click="router.replace('/login')">前往登录</el-button>
-        </template>
+          <el-button type="primary" @click="router.replace('/login')">{{ t("setup.goLogin") }}</el-button>
+</template>
       </el-result>
 
       <template v-else>
-        <!-- 第一步：环境检测 -->
+
         <div class="setup-section">
           <div class="section-head">
             <span class="section-title">
-              <el-tag size="small" type="primary" class="mr-8">1</el-tag>运行环境检测
+              <el-tag size="small" type="primary" class="mr-8">1</el-tag>{{ t("setup.step1Title") }}
             </span>
             <el-button size="small" :loading="envLoading" @click="loadEnv">
-              <el-icon v-if="!envLoading"><Refresh /></el-icon> 重新检测
+              <el-icon v-if="!envLoading"><Refresh /></el-icon> {{ t("setup.recheck") }}
             </el-button>
           </div>
           <EnvCheckTable :report="envReport" :loading="envLoading" />
         </div>
 
-        <!-- 第二步：创建管理员账户 -->
+
         <div class="setup-section">
           <div class="section-head">
             <span class="section-title">
-              <el-tag size="small" type="primary" class="mr-8">2</el-tag>创建管理员账户
+              <el-tag size="small" type="primary" class="mr-8">2</el-tag>{{ t("setup.step2Title") }}
             </span>
           </div>
           <el-alert
             v-if="envReport && !envReport.critical_ok"
-            title="关键环境检测未通过，请先按上方提示修复（如安装 ffmpeg）后再创建账户"
+            :title="t('setup.criticalWarn')"
             type="error" :closable="false" show-icon class="mb-16"
           />
           <el-form :model="form" :rules="rules" ref="formRef" label-width="110">
-            <el-form-item label="管理员用户名" prop="username">
-              <el-input v-model="form.username" placeholder="admin" style="width: 320px" maxlength="50" />
+            <el-form-item :label="t('setup.username')" prop="username">
+              <el-input v-model="form.username" :placeholder="t('setup.usernamePlaceholder')" style="width: 320px" maxlength="50" />
             </el-form-item>
-            <el-form-item label="登录密码" prop="password">
+            <el-form-item :label="t('setup.password')" prop="password">
               <el-input
                 v-model="form.password"
                 type="password"
                 show-password
-                placeholder="至少 6 位，建议 10 位以上"
+                :placeholder="t('setup.passwordPlaceholder')"
                 style="width: 320px"
               />
             </el-form-item>
-            <el-form-item label="确认密码" prop="confirm">
+            <el-form-item :label="t('setup.confirm')" prop="confirm">
               <el-input
                 v-model="form.confirm"
                 type="password"
                 show-password
-                placeholder="再次输入密码"
+                :placeholder="t('setup.confirmPlaceholder')"
                 style="width: 320px"
               />
             </el-form-item>
@@ -74,28 +74,52 @@
                 :disabled="envLoading || (envReport ? !envReport.critical_ok : true)"
                 @click="submit"
               >
-                完成设置并进入系统
+                {{ t("setup.submit") }}
               </el-button>
             </el-form-item>
           </el-form>
         </div>
 
         <p class="setup-note">
-          完成设置后此页面不再可访问；账户信息仅保存在本机数据库中，请妥善保管。
+          {{ t("setup.note") }}
         </p>
-      </template>
+
+        <div class="setup-footer">
+          <el-dropdown trigger="click" @command="switchLang">
+            <span class="lang-switch">
+              <el-icon><Position /></el-icon>
+              {{ currentLangLabel }}
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="l in SUPPORTED_LANGS" :key="l.value" :command="l.value" :disabled="l.value === lang">
+                  {{ l.label }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+</template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, Position } from '@element-plus/icons-vue'
 import { api } from '@/api'
 import EnvCheckTable from '@/components/EnvCheckTable.vue'
+import { useI18n } from 'vue-i18n'
+import { setLang, SUPPORTED_LANGS } from '@/i18n'
+
+const { t, locale } = useI18n()
+
+const lang = computed(() => locale.value as string)
+const currentLangLabel = computed(() => SUPPORTED_LANGS.find(l => l.value === lang.value)?.label || '中文')
+const switchLang = (v: string) => setLang(v as 'zh' | 'en')
 
 const router = useRouter()
 const formRef = ref<FormInstance>()
@@ -110,26 +134,26 @@ const form = reactive({
   confirm: '',
 })
 
-const rules = {
+const rules = computed(() => ({
   username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 50, message: '用户名长度 3~50 个字符', trigger: 'blur' },
+    { required: true, message: t('setup.usernameRequired'), trigger: 'blur' },
+    { min: 3, max: 50, message: t('setup.usernameLength'), trigger: 'blur' },
   ],
   password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码至少 6 位', trigger: 'blur' },
+    { required: true, message: t('setup.passwordRequired'), trigger: 'blur' },
+    { min: 6, message: t('setup.passwordMin'), trigger: 'blur' },
   ],
   confirm: [
-    { required: true, message: '请再次输入密码', trigger: 'blur' },
+    { required: true, message: t('setup.confirmRequired'), trigger: 'blur' },
     {
       validator: (_: any, value: string, cb: any) => {
-        if (value !== form.password) cb(new Error('两次输入的密码不一致'))
+        if (value !== form.password) cb(new Error(t('setup.confirmMismatch')))
         else cb()
       },
       trigger: 'blur',
     },
   ],
-}
+}))
 
 const loadEnv = async () => {
   envLoading.value = true
@@ -138,7 +162,7 @@ const loadEnv = async () => {
     needSetup.value = !!res?.need_setup
     envReport.value = res?.env || null
   } catch (e) {
-    // 错误提示由响应拦截器统一处理
+
     console.error(e)
   } finally {
     envLoading.value = false
@@ -153,14 +177,14 @@ const submit = async () => {
       username: form.username,
       password: form.password,
     })
-    // 直接使用返回的令牌登录
+
     if (res?.token) {
       localStorage.setItem('token', res.token)
     }
-    ElMessage.success(`欢迎，${form.username}！初始化设置完成`)
+    ElMessage.success(t('setup.success', { name: form.username }))
     router.replace('/dashboard')
   } catch (e) {
-    // 错误提示由响应拦截器统一处理（展示后端 {error} 文案）
+
     console.error(e)
   } finally {
     submitting.value = false
@@ -232,5 +256,16 @@ onMounted(() => {
   text-align: center;
   font-size: 12px;
   color: #b1b3b8;
+}
+.setup-footer {
+  margin-top: 24px;
+  text-align: center;
+  .lang-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    outline: none;
+  }
 }
 </style>

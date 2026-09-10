@@ -20,14 +20,14 @@ type Config struct {
 	Update   UpdateConfig   `mapstructure:"update" yaml:"update"`
 }
 
-// UpdateConfig 程序自更新配置
+
 type UpdateConfig struct {
-	// Proxy 更新检查/下载使用的 HTTP(S) 代理，如 http://192.168.1.5:7890；
-	// 留空 = 直连。国内网络直连 GitHub 不稳定/被干扰时配置代理后无需重启即可生效。
+
+
 	Proxy string `mapstructure:"proxy" yaml:"proxy"`
-	// GitHubRepo Release 源仓库（owner/repo），默认本项目（私有部署可改）
+
 	GitHubRepo string `mapstructure:"github_repo" yaml:"github_repo"`
-	// BaseURL 更新 API 基础地址，默认 https://api.github.com（可指向私有镜像）
+
 	BaseURL string `mapstructure:"base_url" yaml:"base_url"`
 }
 
@@ -76,7 +76,7 @@ type LocalStorageConfig struct {
 	RootPath        string `mapstructure:"root_path" yaml:"root_path"`
 	SegmentDuration int    `mapstructure:"segment_duration" yaml:"segment_duration"`
 	MaxDays         int    `mapstructure:"max_days" yaml:"max_days"`
-	// MaxStorageGB 存储占用上限（GB），与保留天数并行：谁先达到先清理；0 = 不限制
+
 	MaxStorageGB    float64 `mapstructure:"max_storage_gb" yaml:"max_storage_gb"`
 	CleanupInterval int    `mapstructure:"cleanup_interval" yaml:"cleanup_interval"`
 }
@@ -87,32 +87,30 @@ type WebdavConfig struct {
 	Username string `mapstructure:"username" yaml:"username" json:"username"`
 	Password string `mapstructure:"password" yaml:"password" json:"password"`
 	BasePath string `mapstructure:"base_path" yaml:"base_path" json:"base_path"`
-	// MaxDays 远程保留天数（独立于本地保留）；0 = 不按时间自动删除
+
 	MaxDays int `mapstructure:"max_days" yaml:"max_days" json:"max_days"`
-	// MaxStorageGB 远程占用上限（GB）；0 = 不限制；超限时从最旧录像开始删除
+
 	MaxStorageGB float64 `mapstructure:"max_storage_gb" yaml:"max_storage_gb" json:"max_storage_gb"`
-	// Only WebDAV 独占模式：true 时录像上传成功后立即删除本地副本，
-	// 本地仅作为上传前的临时缓冲（上传失败则保留本地文件防丢失）。
-	// 旧录像回放自动走 WebDAV 流式播放。
+
+
 	Only bool `mapstructure:"only" yaml:"only" json:"only"`
 }
 
 type MinIOConfig struct {
 	Enabled    bool   `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
-	Endpoint   string `mapstructure:"endpoint" yaml:"endpoint" json:"endpoint"` // host:port
+	Endpoint   string `mapstructure:"endpoint" yaml:"endpoint" json:"endpoint"`
 	AccessKey  string `mapstructure:"access_key" yaml:"access_key" json:"access_key"`
 	SecretKey  string `mapstructure:"secret_key" yaml:"secret_key" json:"secret_key"`
 	Bucket     string `mapstructure:"bucket" yaml:"bucket" json:"bucket"`
 	UseSSL     bool   `mapstructure:"use_ssl" yaml:"use_ssl" json:"use_ssl"`
-	// BasePath Bucket 内的根前缀（录像对象键为 {base}/camera_{id}/xxx.mp4）
+
 	BasePath string `mapstructure:"base_path" yaml:"base_path" json:"base_path"`
-	// MaxDays 远程保留天数（独立于本地保留）；0 = 不按时间自动删除
+
 	MaxDays int `mapstructure:"max_days" yaml:"max_days" json:"max_days"`
-	// MaxStorageGB 远程占用上限（GB）；0 = 不限制；超限时从最旧录像开始删除
+
 	MaxStorageGB float64 `mapstructure:"max_storage_gb" yaml:"max_storage_gb" json:"max_storage_gb"`
-	// Only MinIO 独占模式：true 时录像上传成功后立即删除本地副本，
-	// 本地仅作为上传前的临时缓冲（上传失败则保留本地文件防丢失）。
-	// 旧录像回放自动走 MinIO 流式播放。
+
+
 	Only bool `mapstructure:"only" yaml:"only" json:"only"`
 }
 
@@ -123,30 +121,30 @@ type CameraConfig struct {
 	MaxReconnect      int `mapstructure:"max_reconnect" yaml:"max_reconnect"`
 	SnapshotEnabled   bool `mapstructure:"snapshot_enabled" yaml:"snapshot_enabled"`
 	SnapshotInterval  int  `mapstructure:"snapshot_interval" yaml:"snapshot_interval"`
-	// OnvifEvent ONVIF 事件报警（摄像头主动上报的移动侦测/越线/入侵等）
+
 	OnvifEvent OnvifEventConfig `mapstructure:"onvif_event" yaml:"onvif_event"`
-	// MotionRecord 移动侦测触发录像（事件型录像：平时不录，检测到移动时才录）
+
 	MotionRecord MotionRecordConfig `mapstructure:"motion_record" yaml:"motion_record"`
-	// PreviewStream 预览源码流：main=主码流（高清，默认）| sub=子码流（低分辨率，省带宽/CPU）
+
 	PreviewStream string `mapstructure:"preview_stream" yaml:"preview_stream"`
 }
 
-// MotionRecordConfig 移动侦测触发录像配置（RecordType=motion 的摄像头生效）
+
 type MotionRecordConfig struct {
-	// Duration 每次移动触发后录制的时长（秒）
+
 	Duration int `mapstructure:"duration" yaml:"duration"`
-	// PreRecord 录像开始前回溯的预录时长（秒）；需要常驻环形缓冲，预留字段，暂未实现
+
 	PreRecord int `mapstructure:"pre_record" yaml:"pre_record"`
-	// Cooldown 相邻两次触发的冷却时间（秒）：冷却期内重复报警不会重复触发录像
+
 	Cooldown int `mapstructure:"cooldown" yaml:"cooldown"`
 }
 
 type OnvifEventConfig struct {
-	// Enabled 是否启用 ONVIF 事件订阅（摄像头主动上报报警）
+
 	Enabled bool `mapstructure:"enabled" yaml:"enabled"`
-	// PollInterval 拉取事件间隔（秒）；建议 5~30，太大报警延迟高，太小增加负载
+
 	PollInterval int `mapstructure:"poll_interval" yaml:"poll_interval"`
-	// SubscriptionTimeout 订阅超时（分钟）；到期自动重新订阅
+
 	SubscriptionTimeout int `mapstructure:"subscription_timeout" yaml:"subscription_timeout"`
 }
 
@@ -164,8 +162,8 @@ type AlertChannels struct {
 type WebhookAlertConfig struct {
 	Enabled bool   `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
 	URL     string `mapstructure:"url" yaml:"url" json:"url"`
-	// Type 推送格式类型：generic（默认，通用 JSON）| gotify（Gotify /message 接口，
-	// URL 填形如 https://gotify.example.com/message?token=xxx）
+
+
 	Type string `mapstructure:"type" yaml:"type" json:"type"`
 }
 
@@ -215,7 +213,7 @@ func Load(configPath string) (*Config, error) {
 	v.SetConfigFile(configPath)
 	v.SetConfigType("yaml")
 
-	// 环境变量覆盖
+
 	v.AutomaticEnv()
 	v.SetEnvPrefix("SURVEILLANCE")
 
@@ -228,7 +226,7 @@ func Load(configPath string) (*Config, error) {
 		return nil, err
 	}
 
-	// 规范化路径
+
 	cfg.Storage.Local.RootPath = expandPath(cfg.Storage.Local.RootPath)
 	cfg.Database.SQLite.Path = expandPath(cfg.Database.SQLite.Path)
 	cfg.Logging.Output = expandPath(cfg.Logging.Output)
@@ -248,12 +246,12 @@ func expandPath(path string) string {
 	return path
 }
 
-// GetConfig 获取全局配置（线程安全）
+
 func GetConfig() *Config {
 	return GlobalConfig
 }
 
-// Save 保存配置到文件
+
 func (c *Config) Save(path string) error {
 	data, err := yaml.Marshal(c)
 	if err != nil {

@@ -1,20 +1,20 @@
 <template>
   <div v-loading="loading" class="env-check">
-    <el-empty v-if="!report && !loading" description="点击右上角「运行环境检测」开始" :image-size="60" />
+    <el-empty v-if="!report && !loading" :description="t('envCheck.emptyHint')" :image-size="60" />
     <template v-else-if="report">
       <el-alert
         v-if="!report.critical_ok"
-        :title="`关键环境检测未通过（${failCount} 项失败）：请按下方提示修复后再继续`"
+        :title="t('envCheck.criticalFail', { n: failCount })"
         type="error" :closable="false" show-icon class="mb-12"
       />
       <el-alert
         v-else-if="!report.ok"
-        :title="`环境检测存在告警（${warnCount} 项）：系统可运行，建议按提示处理`"
+        :title="t('envCheck.warnHint', { n: warnCount })"
         type="warning" :closable="false" show-icon class="mb-12"
       />
       <el-alert
         v-else
-        title="全部环境检测通过"
+        :title="t('envCheck.allPassed')"
         type="success" :closable="false" show-icon class="mb-12"
       />
 
@@ -24,19 +24,19 @@
             <el-icon v-if="row.status === 'ok'" :size="20" color="#67c23a"><CircleCheck /></el-icon>
             <el-icon v-else-if="row.status === 'warn'" :size="20" color="#e6a23c"><Warning /></el-icon>
             <el-icon v-else :size="20" color="#f56c6c"><CircleClose /></el-icon>
-          </template>
+</template>
         </el-table-column>
-        <el-table-column label="检查项">
+        <el-table-column :label="t('envCheck.checkItem')">
           <template #default="{ row }">
             <div>
               <span :class="['env-name', row.status]">{{ row.name }}</span>
-              <el-tag v-if="row.required && row.status !== 'ok'" size="small" type="danger" effect="plain" class="ml-6">关键</el-tag>
+              <el-tag v-if="row.required && row.status !== 'ok'" size="small" type="danger" effect="plain" class="ml-6">{{ t('envCheck.criticalTag') }}</el-tag>
             </div>
             <div class="env-detail">{{ row.detail }}</div>
             <div v-if="row.fix && row.status !== 'ok'" class="env-fix">
               <el-icon class="mr-4"><Tools /></el-icon>{{ row.fix }}
             </div>
-          </template>
+</template>
         </el-table-column>
       </el-table>
     </template>
@@ -45,7 +45,10 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { CircleCheck, CircleClose, Warning, Tools } from '@element-plus/icons-vue'
+
+const { t } = useI18n()
 
 interface CheckItem {
   name: string

@@ -1,26 +1,26 @@
 <template>
   <div class="playback-page" v-if="camera">
-    <!-- 顶部栏 -->
+
     <el-card :shadow="never" class="mb-16">
       <div class="playback-header">
         <div class="camera-info">
           <el-button link @click="goBack"><el-icon><ArrowLeft /></el-icon></el-button>
-          <h2>{{ camera.name }} - 历史回放</h2>
+          <h2>{{ camera.name }} - {{ t('recordings.playback.subtitle') }}</h2>
         </div>
         <div class="playback-controls">
-          <el-date-picker v-model="playDate" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" style="width: 160px" />
+          <el-date-picker v-model="playDate" type="date" :placeholder="t('recordings.playback.selectDate')" value-format="YYYY-MM-DD" style="width: 160px" />
           <el-button :type="isPlaying ? 'success' : 'primary'" @click="togglePlay" :loading="playLoading">
             <el-icon><VideoPlay v-if="!isPlaying" /><VideoPause v-else /></el-icon>
-            {{ isPlaying ? '暂停' : '播放' }}
+            {{ isPlaying ? t('recordings.playback.pause') : t('recordings.playback.play') }}
           </el-button>
-          <el-button @click="stopPlay"><el-icon><VideoPause /></el-icon> 停止</el-button>
-          <el-button @click="downloadCurrent"><el-icon><Download /></el-icon> 下载</el-button>
+          <el-button @click="stopPlay"><el-icon><VideoPause /></el-icon> {{ t('recordings.playback.stop') }}</el-button>
+          <el-button @click="downloadCurrent"><el-icon><Download /></el-icon> {{ t('recordings.playback.download') }}</el-button>
         </div>
       </div>
     </el-card>
 
     <el-row :gutter="24">
-      <!-- 视频播放区 -->
+
       <el-col :xs="24" :lg="16">
         <el-card :shadow="never" class="video-card">
           <div class="video-container aspect-16-9" ref="videoContainer">
@@ -38,10 +38,10 @@
             </div>
             <div class="video-placeholder" v-if="!currentSegment && !currentWebdav && !videoLoading">
               <el-icon><Film /></el-icon>
-              <p>请从右侧列表或时间轴选择一个录像片段开始播放</p>
+              <p>{{ t('recordings.playback.selectSegmentHint') }}</p>
             </div>
 
-            <!-- 进度条 -->
+
             <div class="playback-progress" @click="seek($event)">
               <div class="progress-track">
                 <div class="progress-buffer" :style="{ width: bufferPercent + '%' }" />
@@ -57,11 +57,11 @@
           </div>
         </el-card>
 
-        <!-- 录像片段时间轴 -->
+
         <el-card :shadow="never" class="mt-16">
           <template #header>
-            <h3>录像片段时间轴</h3>
-          </template>
+            <h3>{{ t('recordings.playback.timelineTitle') }}</h3>
+</template>
           <div class="timeline">
             <div class="timeline-track">
               <div class="timeline-segment" v-for="seg in segments" :key="seg.id" :style="segmentStyle(seg)" :class="{ 'segment-motion': seg.record_type === 'motion' }" @click="jumpToSegment(seg)">
@@ -81,15 +81,15 @@
         <el-card :shadow="never">
           <template #header>
             <div class="card-header">
-              <h3>当日录像列表</h3>
+              <h3>{{ t('recordings.playback.dailyListTitle') }}</h3>
               <el-button size="small" @click="loadSegments"><el-icon><Refresh /></el-icon></el-button>
             </div>
-          </template>
+</template>
 
           <div class="segment-list" v-if="segments.length > 0">
             <div class="segment-item" v-for="seg in displaySegments" :key="seg.id" :class="{ active: currentSegment?.id === seg.id }" @click="jumpToSegment(seg)">
               <div class="segment-type" :class="seg.record_type">
-                {{ typeLabels[seg.record_type] }}
+                {{ t('recordings.playback.typeLabel.' + seg.record_type) }}
               </div>
               <div class="segment-info">
                 <p class="segment-time">{{ formatTime(seg.start_time) }} - {{ formatTime(seg.end_time) }}</p>
@@ -99,13 +99,13 @@
             </div>
             <div class="load-more" v-if="hiddenSegmentCount > 0">
               <el-button text type="primary" @click="loadMoreSegments">
-                加载更多（还有 {{ hiddenSegmentCount }} 条）
+                {{ t('recordings.playback.loadMore', { count: hiddenSegmentCount }) }}
               </el-button>
             </div>
           </div>
           <div class="empty-state" v-else>
             <el-icon><Film /></el-icon>
-            <p>该日期暂无录像</p>
+            <p>{{ t('recordings.playback.emptyDay') }}</p>
           </div>
         </el-card>
 
@@ -113,28 +113,28 @@
         <el-card :shadow="never" class="mt-16">
           <template #header>
             <div class="card-header">
-              <h3><el-icon><Cloudy /></el-icon> WebDAV 云录像</h3>
+              <h3><el-icon><Cloudy /></el-icon> {{ t('recordings.playback.webdavTitle') }}</h3>
               <el-button size="small" @click="loadWebdavFiles" :loading="webdavLoading">
                 <el-icon><Refresh /></el-icon>
               </el-button>
             </div>
-          </template>
-          <p class="webdav-hint" v-if="webdavEnabled === false">WebDAV 未启用（可在 存储管理 中配置）</p>
+</template>
+          <p class="webdav-hint" v-if="webdavEnabled === false">{{ t('recordings.playback.webdavDisabled') }}</p>
           <div class="segment-list" v-else-if="webdavFiles.length > 0">
             <div class="segment-item" v-for="f in webdavFiles" :key="f.path" :class="{ active: currentWebdav === f.path }" @click="playWebdavFile(f)">
               <div class="segment-type" :class="f.name.startsWith('motion_') ? 'motion' : 'continuous'">
-                {{ f.name.startsWith('motion_') ? '移动' : '连续' }}
+                {{ t('recordings.playback.typeLabel.' + (f.name.startsWith('motion_') ? 'motion' : 'continuous')) }}
               </div>
               <div class="segment-info">
                 <p class="segment-time webdav-file-name" :title="f.name">{{ f.name }}</p>
-                <p class="segment-duration">{{ f.mod_time ? new Date(f.mod_time).toLocaleString('zh-CN') : '' }} · {{ formatBytes(f.size) }}</p>
+                <p class="segment-duration">{{ f.mod_time ? new Date(f.mod_time).toLocaleString(locale.value === 'en' ? 'en-US' : 'zh-CN') : '' }} · {{ formatBytes(f.size) }}</p>
               </div>
               <el-icon v-if="currentWebdav === f.path"><VideoPlay class="playing" /></el-icon>
             </div>
           </div>
           <div class="empty-state" v-else>
             <el-icon><Cloudy /></el-icon>
-            <p>WebDAV 上暂无该摄像头的录像</p>
+            <p>{{ t('recordings.playback.webdavEmpty') }}</p>
           </div>
         </el-card>
 
@@ -142,28 +142,28 @@
         <el-card :shadow="never" class="mt-16">
           <template #header>
             <div class="card-header">
-              <h3><el-icon><Cloudy /></el-icon> MinIO 云录像</h3>
+              <h3><el-icon><Cloudy /></el-icon> {{ t('recordings.playback.minioTitle') }}</h3>
               <el-button size="small" @click="loadMinioFiles" :loading="minioLoading">
                 <el-icon><Refresh /></el-icon>
               </el-button>
             </div>
-          </template>
-          <p class="webdav-hint" v-if="minioEnabled === false">MinIO 未启用（可在 存储设置 中配置）</p>
+</template>
+          <p class="webdav-hint" v-if="minioEnabled === false">{{ t('recordings.playback.minioDisabled') }}</p>
           <div class="segment-list" v-else-if="minioFiles.length > 0">
             <div class="segment-item" v-for="f in minioFiles" :key="f.path" :class="{ active: currentMinio === f.path }" @click="playMinioFile(f)">
               <div class="segment-type" :class="f.name.startsWith('motion_') ? 'motion' : 'continuous'">
-                {{ f.name.startsWith('motion_') ? '移动' : '连续' }}
+                {{ t('recordings.playback.typeLabel.' + (f.name.startsWith('motion_') ? 'motion' : 'continuous')) }}
               </div>
               <div class="segment-info">
                 <p class="segment-time webdav-file-name" :title="f.name">{{ f.name }}</p>
-                <p class="segment-duration">{{ f.mod_time ? new Date(f.mod_time).toLocaleString('zh-CN') : '' }} · {{ formatBytes(f.size) }}</p>
+                <p class="segment-duration">{{ f.mod_time ? new Date(f.mod_time).toLocaleString(locale.value === 'en' ? 'en-US' : 'zh-CN') : '' }} · {{ formatBytes(f.size) }}</p>
               </div>
               <el-icon v-if="currentMinio === f.path"><VideoPlay class="playing" /></el-icon>
             </div>
           </div>
           <div class="empty-state" v-else>
             <el-icon><Cloudy /></el-icon>
-            <p>MinIO 上暂无该摄像头的录像</p>
+            <p>{{ t('recordings.playback.minioEmpty') }}</p>
           </div>
         </el-card>
       </el-col>
@@ -171,7 +171,7 @@
   </div>
   <div class="loading-full" v-else>
     <el-icon class="loading-spinner"><Loading /></el-icon>
-    <p>加载中...</p>
+    <p>{{ t('recordings.playback.loading') }}</p>
   </div>
 </template>
 
@@ -182,7 +182,9 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, VideoPlay, VideoPause, Download, Refresh, Loading, Film, Cloudy } from '@element-plus/icons-vue'
 import { api } from '@/api'
 import { useCameraStore } from '@/stores'
+import { useI18n } from 'vue-i18n'
 
+const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const cameraStore = useCameraStore()
@@ -195,29 +197,27 @@ const loadingText = ref('')
 const isPlaying = ref(false)
 const playLoading = ref(false)
 
-// 默认今天（本地时区！toISOString 是 UTC，凌晨会错成昨天）
+
 const today = new Date()
 const pad2 = (n: number) => String(n).padStart(2, '0')
 const playDate = ref(`${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`)
 const segments = ref<any[]>([])
 const currentSegment = ref<any>(null)
 
-// 当日列表：倒序（最新在前）+ 默认只显示最近 N 条 + 「加载更多」。
-// segments 本身保持后端的时间正序（时间轴按时间定位不依赖顺序），
-// 列表单独用 displaySegments 做倒序截断，互不影响。
+
 const SEGMENT_PAGE_SIZE = 50
 const visibleCount = ref(SEGMENT_PAGE_SIZE)
 const displaySegments = computed(() => [...segments.value].reverse().slice(0, visibleCount.value))
 const hiddenSegmentCount = computed(() => Math.max(0, segments.value.length - displaySegments.value.length))
 const loadMoreSegments = () => { visibleCount.value += SEGMENT_PAGE_SIZE }
 
-// WebDAV 云录像
+
 const webdavEnabled = ref<boolean | null>(null)
 const webdavFiles = ref<any[]>([])
 const webdavLoading = ref(false)
 const currentWebdav = ref<string | null>(null)
 
-// MinIO 云录像
+
 const minioEnabled = ref<boolean | null>(null)
 const minioFiles = ref<any[]>([])
 const minioLoading = ref(false)
@@ -232,10 +232,9 @@ const cursorPercent = ref(0)
 
 let segmentCheckTimer: any = null
 
-const typeLabels = { continuous: '连续', motion: '移动', schedule: '定时', manual: '手动' }
 const formatTime = (time: string | number) => {
   if (typeof time === 'number') { const m = Math.floor(time/60), s = Math.floor(time%60); return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` }
-  return time ? new Date(time).toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '00:00:00'
+  return time ? new Date(time).toLocaleTimeString(locale.value === 'en' ? 'en-US' : 'zh-CN', {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '00:00:00'
 }
 const formatDuration = (sec: number) => { const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60); return h>0?`${h}h${m}m`:`${m}m` }
 const formatBytes = (bytes: number) => { if(!bytes) return '0 B'; const k=1024,sizes=['B','KB','MB','GB']; const i=Math.floor(Math.log(bytes)/Math.log(k)); return parseFloat((bytes/Math.pow(k,i)).toFixed(1))+' '+sizes[i] }
@@ -247,7 +246,7 @@ const loadCamera = async () => {
     loadSegments()
     loadWebdavFiles()
     loadMinioFiles()
-  } catch (e) { ElMessage.error('获取摄像头失败'); router.push('/recordings') }
+  } catch (e) { ElMessage.error(t('recordings.playback.fetchCameraFailed')); router.push('/recordings') }
 }
 
 const loadSegments = async () => {
@@ -258,10 +257,10 @@ const loadSegments = async () => {
     const res = await api.recordings.segments(camera.value.id, start, end)
     segments.value = res.data || res || []
     visibleCount.value = SEGMENT_PAGE_SIZE
-  } catch (e) { ElMessage.error('获取录像片段失败') }
+  } catch (e) { ElMessage.error(t('recordings.playback.fetchSegmentsFailed')) }
 }
 
-// 加载 WebDAV 上该摄像头的录像文件
+
 const loadWebdavFiles = async () => {
   if (!camera.value) return
   webdavLoading.value = true
@@ -280,14 +279,14 @@ const loadWebdavFiles = async () => {
   }
 }
 
-// 播放 WebDAV 上的文件（流式代理，支持 Range 拖动）
+
 const playWebdavFile = (f: any) => {
   currentWebdav.value = f.path
   currentSegment.value = null
   const video = videoPlayer.value
   if (!video) return
   videoLoading.value = true
-  loadingText.value = '正在从 WebDAV 加载录像文件...'
+  loadingText.value = t('recordings.playback.loadingWebdav')
   isPlaying.value = false
   video.pause()
   video.removeAttribute('src')
@@ -300,7 +299,7 @@ const playWebdavFile = (f: any) => {
   }
 }
 
-// 加载 MinIO 上该摄像头的录像对象
+
 const loadMinioFiles = async () => {
   if (!camera.value) return
   minioLoading.value = true
@@ -319,14 +318,14 @@ const loadMinioFiles = async () => {
   }
 }
 
-// 播放 MinIO 上的对象（流式代理，支持 Range 拖动）
+
 const playMinioFile = (f: any) => {
   currentMinio.value = f.path
   currentSegment.value = null
   const video = videoPlayer.value
   if (!video) return
   videoLoading.value = true
-  loadingText.value = '正在从 MinIO 加载录像文件...'
+  loadingText.value = t('recordings.playback.loadingMinio')
   isPlaying.value = false
   video.pause()
   video.removeAttribute('src')
@@ -350,15 +349,15 @@ const playSegment = (seg: any) => {
   currentWebdav.value = null
   currentMinio.value = null
   videoLoading.value = true
-  loadingText.value = '正在加载录像文件...'
+  loadingText.value = t('recordings.playback.loadingFile')
   isPlaying.value = false
   video.pause()
 
-  // 先释放旧源再设置新源（保证重复点击同一片段也能重新加载）
+
   video.removeAttribute('src')
   video.load()
 
-  // 每个录像分段是独立 MP4 文件，浏览器原生播放（服务端支持 Range，可拖动进度）
+
   video.src = api.recordings.file(seg.id)
   video.onloadedmetadata = () => {
     videoLoading.value = false
@@ -374,7 +373,7 @@ const onTimeUpdate = () => {
   playedPercent.value = duration.value ? (currentTime.value / duration.value) * 100 : 0
   bufferPercent.value = videoPlayer.value.buffered.length ? (videoPlayer.value.buffered.end(0) / duration.value) * 100 : 0
 
-  // 时间轴游标：把"正在播放的时间点"映射到当天 24 小时时间轴上
+
   if (currentSegment.value && duration.value) {
     const segStartMs = new Date(currentSegment.value.start_time).getTime()
     const posMs = segStartMs + videoPlayer.value.currentTime * 1000
@@ -396,7 +395,7 @@ const togglePlay = async () => {
   try {
     if (isPlaying.value) { await videoPlayer.value.pause() } else { await videoPlayer.value.play() }
     isPlaying.value = !isPlaying.value
-  } catch (e) { ElMessage.error('操作失败') }
+  } catch (e) { ElMessage.error(t('recordings.playback.operationFailed')) }
   finally { playLoading.value = false }
 }
 
@@ -414,9 +413,9 @@ const stopPlay = () => {
 }
 
 const downloadCurrent = async () => {
-  if (!currentSegment.value && !currentWebdav.value) { ElMessage.warning('请先选择录像片段'); return }
+  if (!currentSegment.value && !currentWebdav.value) { ElMessage.warning(t('recordings.playback.selectSegmentFirst')); return }
   try {
-    // WebDAV 文件：直接按路径下载
+
     if (currentWebdav.value) {
       const name = currentWebdav.value.split('/').pop() || 'webdav_file.mp4'
       const a = document.createElement('a')
@@ -431,17 +430,17 @@ const downloadCurrent = async () => {
     const a = document.createElement('a')
     a.href = url; a.download = `playback_${currentSegment.value.id}.mp4`; a.click()
     URL.revokeObjectURL(url)
-  } catch (e) { ElMessage.error('下载失败') }
+  } catch (e) { ElMessage.error(t('recordings.playback.downloadFailed')) }
 }
 
-const handleVideoError = () => { videoLoading.value = false; loadingText.value = '视频加载失败，请重试' }
+const handleVideoError = () => { videoLoading.value = false; loadingText.value = t('recordings.playback.videoLoadError') }
 
 const segmentStyle = (seg: any) => {
   const s = new Date(seg.start_time)
   const e = new Date(seg.end_time)
   let startH = s.getHours() + s.getMinutes() / 60 + s.getSeconds() / 3600
   let endH = e.getHours() + e.getMinutes() / 60 + e.getSeconds() / 3600
-  if (endH <= startH) endH = startH + 0.02 // 跨午夜/超短片段：显示最小宽度标记
+  if (endH <= startH) endH = startH + 0.02
   return { left: `${startH / 24 * 100}%`, width: `${Math.max(0.3, (endH - startH) / 24 * 100)}%` }
 }
 

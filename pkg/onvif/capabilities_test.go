@@ -32,7 +32,7 @@ func TestExtractServiceXAddr(t *testing.T) {
 }
 
 func TestExtractServiceXAddrWithPrefix(t *testing.T) {
-	// 用带 tt: 前缀的真实海康格式
+
 	raw := `<tt:Capabilities>
   <tt:Media><tt:XAddr>http://192.168.168.202/onvif/Media</tt:XAddr></tt:Media>
   <tt:Events><tt:XAddr>http://192.168.168.202/onvif/Events</tt:XAddr></tt:Events>

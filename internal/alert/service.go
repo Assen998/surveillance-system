@@ -55,8 +55,6 @@ func NewManager(cfg *config.Config) *Manager {
 		},
 	}
 
-	// 注册到 analytics
-	// analytics.RegisterAlertHandler(m.OnAlert)
 
 	return m
 }
@@ -105,7 +103,7 @@ func (m *Manager) processLoop() {
 func (m *Manager) sendAlert(alert *models.Alert) {
 	var wg sync.WaitGroup
 
-	// Webhook
+
 	if m.cfg.Alert.Channels.Webhook.Enabled && m.cfg.Alert.Channels.Webhook.URL != "" {
 		wg.Add(1)
 		go func() {
@@ -116,7 +114,7 @@ func (m *Manager) sendAlert(alert *models.Alert) {
 		}()
 	}
 
-	// Email
+
 	if m.cfg.Alert.Channels.Email.Enabled {
 		wg.Add(1)
 		go func() {
@@ -127,7 +125,7 @@ func (m *Manager) sendAlert(alert *models.Alert) {
 		}()
 	}
 
-	// SMS
+
 	if m.cfg.Alert.Channels.SMS.Enabled {
 		wg.Add(1)
 		go func() {
@@ -140,8 +138,7 @@ func (m *Manager) sendAlert(alert *models.Alert) {
 
 	wg.Wait()
 
-	// 标记已通知
-	// 实际应用中应更新数据库
+
 }
 
 func (m *Manager) sendWebhook(alert *models.Alert, wh *config.WebhookAlertConfig) error {
@@ -151,11 +148,11 @@ func (m *Manager) sendWebhook(alert *models.Alert, wh *config.WebhookAlertConfig
 	var data []byte
 	var err error
 
-	// 按 webhook 类型选择 payload 格式
+
 	if strings.EqualFold(wh.Type, "gotify") {
 		data, err = m.buildGotifyPayload(alert)
 	} else {
-		// generic（默认）：通用 JSON
+
 		payload := WebhookPayload{
 			Alert:     alert,
 			Timestamp: time.Now().Format(time.RFC3339),
@@ -175,7 +172,6 @@ func (m *Manager) sendWebhook(alert *models.Alert, wh *config.WebhookAlertConfig
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	// 钉钉/飞书/企业微信签名验证可在此添加
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
@@ -191,26 +187,26 @@ func (m *Manager) sendWebhook(alert *models.Alert, wh *config.WebhookAlertConfig
 	return nil
 }
 
-// gotifyMessage Gotify /message 接口请求体
+
 type gotifyMessage struct {
 	Title    string `json:"title,omitempty"`
 	Message  string `json:"message"`
 	Priority int    `json:"priority"`
 }
 
-// buildGotifyPayload 将报警转换为 Gotify /message 格式
+
 func (m *Manager) buildGotifyPayload(alert *models.Alert) ([]byte, error) {
 	title := m.templates[alert.Type]
 	if title == "" {
 		title = "🚨 监控报警"
 	}
 
-	// 消息正文：优先用报警自带 message，否则按类型 + 摄像头生成
+
 	msg := strings.TrimSpace(alert.Message)
 	if msg == "" {
 		msg = fmt.Sprintf("摄像头 %d 触发 %s 报警", alert.CameraID, alert.Type)
 	}
-	// 附带报警时间与详情，方便手机端直接查看
+
 	detail := fmt.Sprintf("\n时间：%s", time.Now().Format("2006-01-02 15:04:05"))
 	if alert.CameraID > 0 {
 		detail = fmt.Sprintf("\n摄像头 ID：%d%s", alert.CameraID, detail)
@@ -224,7 +220,7 @@ func (m *Manager) buildGotifyPayload(alert *models.Alert) ([]byte, error) {
 	return json.Marshal(body)
 }
 
-// levelToGotifyPriority 将报警等级映射到 Gotify 优先级（0~10）
+
 func levelToGotifyPriority(level string) int {
 	switch level {
 	case models.AlertLevelLow:
@@ -327,22 +323,14 @@ func (m *Manager) getSnapshotHTML(alert *models.Alert) string {
 func (m *Manager) sendSMS(alert *models.Alert, sm *config.SMSAlertConfig) error {
 	cfg := sm
 
-	// 这里需要根据具体短信服务商实现
-	// 阿里云、腾讯云等都有 Go SDK
+
 	logrus.Infof("短信推送 (模拟): 发送给 %s, 内容: %s", cfg.SignName, alert.Message)
 
-	// 示例：阿里云短信
-	// client, _ := dysmsapi.NewClientWithAccessKey(...)
-	// request := &dysmsapi.SendSmsRequest{...}
-	// response, err := client.SendSms(request)
 
 	return nil
 }
 
-// 手动发送测试报警
-// SendTestAlert 向指定渠道发送测试报警。
-// override 非 nil 时使用前端传入的渠道配置（当前表单值）进行测试，
-// 支持「先测试、后保存」；为 nil 时使用当前生效配置。
+
 func (m *Manager) SendTestAlert(channel string, override *config.AlertConfig) error {
 	testAlert := &models.Alert{
 		CameraID: 0,
@@ -369,13 +357,13 @@ func (m *Manager) SendTestAlert(channel string, override *config.AlertConfig) er
 	}
 }
 
-// 批量发送（用于定时汇总等）
+
 func (m *Manager) SendBatch(alerts []*models.Alert) error {
 	if len(alerts) == 0 {
 		return nil
 	}
 
-	// 合并为一条汇总消息
+
 	_ = fmt.Sprintf("监控系统报警汇总 (%d 条)", len(alerts))
 	body := "<h3>报警详情:</h3><ul>"
 	for _, a := range alerts {
@@ -383,6 +371,6 @@ func (m *Manager) SendBatch(alerts []*models.Alert) error {
 	}
 	body += "</ul>"
 
-	// 发送汇总
+
 	return nil
 }

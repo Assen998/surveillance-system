@@ -1,103 +1,103 @@
 <template>
   <div class="camera-add-page">
     <div class="page-header">
-      <el-button @click="goBack"><el-icon><ArrowLeft /></el-icon> {{ isEditMode ? '返回详情' : '返回列表' }}</el-button>
-      <h2>{{ isEditMode ? '编辑摄像头' : '添加摄像头' }}</h2>
-      <span v-if="isEditMode" class="form-hint">修改现有参数与录像配置，保存后自动重连生效</span>
+      <el-button @click="goBack"><el-icon><ArrowLeft /></el-icon> {{ isEditMode ? t('camerasAdd.backToDetail') : t('camerasAdd.backToList') }}</el-button>
+      <h2>{{ isEditMode ? t('camerasAdd.editCamera') : t('camerasAdd.addCamera') }}</h2>
+      <span v-if="isEditMode" class="form-hint">{{ t('camerasAdd.editHint') }}</span>
     </div>
 
     <el-card :shadow="never">
       <el-form :model="cameraForm" :rules="cameraRules" ref="cameraFormRef" label-width="120">
-        
-        <!-- 协议选择：ONVIF 自动发现 / RTSP 手动粘贴；编辑时锁定（不支持更换连接方式） -->
-        <el-form-item label="连接方式" prop="protocol">
+
+
+        <el-form-item :label="t('camerasAdd.protocol')" prop="protocol">
           <el-radio-group v-model="cameraForm.protocol" :disabled="isEditMode" style="display: flex; gap: 16px;">
-            <el-radio value="onvif">ONVIF 自动发现（推荐）</el-radio>
-            <el-radio value="rtsp">RTSP 流地址</el-radio>
+            <el-radio value="onvif">{{ t('camerasAdd.onvifAuto') }}</el-radio>
+            <el-radio value="rtsp">{{ t('camerasAdd.rtspUrl') }}</el-radio>
           </el-radio-group>
-          <p class="form-hint" v-if="isEditMode">连接方式在添加时确定，不可更换；如需更换请删除该摄像头后重新添加</p>
-          <p class="form-hint" v-else-if="!isRtspMode">填写 IP、用户名、密码后自动发现设备并获取流地址</p>
-          <p class="form-hint" v-else>直接粘贴可正常播放的完整 RTSP 地址（含账号密码），保存前自动实测连通性</p>
+          <p class="form-hint" v-if="isEditMode">{{ t('camerasAdd.protocolLocked') }}</p>
+          <p class="form-hint" v-else-if="!isRtspMode">{{ t('camerasAdd.onvifHint') }}</p>
+          <p class="form-hint" v-else>{{ t('camerasAdd.rtspHint') }}</p>
         </el-form-item>
 
-        <!-- ONVIF 模式：IP、用户名、密码 + 自动探测 -->
+
         <template v-if="!isRtspMode">
-        <el-form-item label="IP 地址" prop="ip">
+        <el-form-item :label="t('camerasAdd.ip')" prop="ip">
           <el-input v-model="cameraForm.ip" placeholder="192.168.1.100" style="width: 300px" @blur="onIpBlur" />
         </el-form-item>
 
-        <el-form-item label="用户名" prop="username">
+        <el-form-item :label="t('camerasAdd.username')" prop="username">
           <el-input v-model="cameraForm.username" placeholder="admin" style="width: 300px" />
         </el-form-item>
 
-        <el-form-item label="密码" prop="password">
-          <el-input v-model="cameraForm.password" type="password" show-password :placeholder="isEditMode ? '留空表示不修改原密码' : '摄像头登录密码'" style="width: 300px" />
-          <p class="form-hint" v-if="isEditMode">修改 IP/用户名/密码后，请重新「自动探测并填充配置」以刷新 Profile 列表</p>
+        <el-form-item :label="t('camerasAdd.password')" prop="password">
+          <el-input v-model="cameraForm.password" type="password" show-password :placeholder="isEditMode ? t('camerasAdd.passwordKeep') : t('camerasAdd.cameraPassword')" style="width: 300px" />
+          <p class="form-hint" v-if="isEditMode">{{ t('camerasAdd.passwordChangedHint') }}</p>
         </el-form-item>
 
-        <!-- 自动探测按钮 -->
-        <el-form-item label="自动配置">
-          <el-button 
-            type="primary" 
-            :loading="detectLoading" 
+
+        <el-form-item :label="t('camerasAdd.autoConfig')">
+          <el-button
+            type="primary"
+            :loading="detectLoading"
             :disabled="!cameraForm.ip || !cameraForm.username || !cameraForm.password"
             @click="autoDetectAndFill"
             style="width: 100%;"
           >
             <el-icon v-if="!detectLoading"><Search /></el-icon>
-            <span v-if="!detectLoading">自动探测并填充配置</span>
-            <span v-else>正在探测...</span>
+            <span v-if="!detectLoading">{{ t('camerasAdd.autoDetect') }}</span>
+            <span v-else>{{ t('camerasAdd.detecting') }}</span>
           </el-button>
           <p class="form-hint" v-if="detectError" style="color: #f56c6c;">{{ detectError }}</p>
           <p class="form-hint" v-if="detectSuccess" style="color: #67c23a;">{{ detectSuccess }}</p>
         </el-form-item>
-        </template>
+</template>
 
         <!-- RTSP 模式：粘贴完整流地址 -->
         <template v-else>
-          <el-form-item label="摄像头名称" prop="name">
-            <el-input v-model="cameraForm.name" placeholder="例如：门口摄像头" style="width: 400px" maxlength="100" />
+          <el-form-item :label="t('camerasAdd.name')" prop="name">
+            <el-input v-model="cameraForm.name" :placeholder="t('camerasAdd.namePlaceholderRtsp')" style="width: 400px" maxlength="100" />
           </el-form-item>
 
-          <el-form-item label="RTSP 流地址" prop="rtsp_url">
-            <el-input v-model="cameraForm.rtsp_url" placeholder="rtsp://用户名:密码@192.168.1.64:554/Streaming/Channels/101" style="width: 560px" />
-            <p class="form-hint">粘贴可正常播放的完整地址；无账号密码的流直接填 rtsp://IP:端口/路径</p>
-            <p class="form-hint" v-if="isEditMode">编辑时密码不回显：不粘贴账号密码则沿用原账号；修改 IP/端口/路径后保存即重连</p>
+          <el-form-item :label="t('camerasAdd.rtspUrl')" prop="rtsp_url">
+            <el-input v-model="cameraForm.rtsp_url" :placeholder="t('camerasAdd.rtspPlaceholder')" style="width: 560px" />
+            <p class="form-hint">{{ t('camerasAdd.rtspPasteHint') }}</p>
+            <p class="form-hint" v-if="isEditMode">{{ t('camerasAdd.rtspEditHint') }}</p>
           </el-form-item>
-        </template>
+</template>
 
         <el-divider v-if="!isRtspMode" />
 
         <!-- 探测成功后显示：设备信息、Profile 选择、高级设置 -->
         <template v-if="detectedDevice">
-          <el-form-item label="设备信息" class="section-title">
+          <el-form-item :label="t('camerasAdd.deviceInfo')" class="section-title">
             <div class="section-divider" />
           </el-form-item>
 
-          <el-form-item label="厂商/型号">
+          <el-form-item :label="t('camerasAdd.manufacturerModel')">
             <el-tag size="small">{{ detectedDevice.manufacturer }} {{ detectedDevice.model }}</el-tag>
-            <el-tag size="small" style="margin-left: 8px;">固件: {{ detectedDevice.firmware }}</el-tag>
+            <el-tag size="small" style="margin-left: 8px;">{{ t('camerasAdd.firmware', { value: detectedDevice.firmware }) }}</el-tag>
           </el-form-item>
 
-          <el-form-item label="摄像头名称" prop="name">
-            <el-input v-model="cameraForm.name" placeholder="自动填充：厂商+型号+IP后缀" style="width: 400px" maxlength="100" />
+          <el-form-item :label="t('camerasAdd.name')" prop="name">
+            <el-input v-model="cameraForm.name" :placeholder="t('camerasAdd.namePlaceholderAuto')" style="width: 400px" maxlength="100" />
           </el-form-item>
 
-          <el-form-item label="视频配置文件 (Profile)" prop="onvif_profile_token">
-            <el-select v-model="cameraForm.onvif_profile_token" placeholder="请选择码流配置" style="width: 400px" clearable>
-              <el-option 
-                v-for="p in detectedDevice.profiles" 
-                :key="p.token" 
-                :label="formatProfileLabel(p)" 
-                :value="p.token" 
+          <el-form-item :label="t('camerasAdd.profile')" prop="onvif_profile_token">
+            <el-select v-model="cameraForm.onvif_profile_token" :placeholder="t('camerasAdd.selectProfile')" style="width: 400px" clearable>
+              <el-option
+                v-for="p in detectedDevice.profiles"
+                :key="p.token"
+                :label="formatProfileLabel(p)"
+                :value="p.token"
               />
             </el-select>
-            <p class="form-hint">主码流(高清)用于录像/回放，子码流(低清)用于多画面预览</p>
-            <p class="form-hint" v-if="isEditMode">仅显示当前已选 Profile；输入密码并「自动探测」可查看全部 Profile</p>
+            <p class="form-hint">{{ t('camerasAdd.streamHint') }}</p>
+            <p class="form-hint" v-if="isEditMode">{{ t('camerasAdd.profileEditHint') }}</p>
           </el-form-item>
 
-          <!-- 自动填充的技术参数（只读展示，可手动修改） -->
-          <el-form-item label="分辨率" v-if="selectedProfile">
+
+          <el-form-item :label="t('camerasAdd.resolution')" v-if="selectedProfile">
             <el-row :gutter="12">
               <el-col :span="11">
                 <el-input-number v-model="cameraForm.width" :disabled="true" style="width: 100%" /> px
@@ -109,10 +109,10 @@
             </el-row>
           </el-form-item>
 
-          <el-form-item label="编码/帧率/码率" v-if="selectedProfile">
+          <el-form-item :label="t('camerasAdd.codecFpsBitrate')" v-if="selectedProfile">
             <el-row :gutter="12">
               <el-col :span="8">
-                <el-select v-model="cameraForm.codec" :disabled="true" style="width: 100%" placeholder="编码">
+                <el-select v-model="cameraForm.codec" :disabled="true" style="width: 100%" :placeholder="t('camerasAdd.codec')">
                   <el-option label="H.264" value="h264" />
                   <el-option label="H.265" value="h265" />
                 </el-select>
@@ -126,51 +126,51 @@
             </el-row>
           </el-form-item>
 
-          <el-form-item label="ONVIF 地址" prop="onvif_address">
+          <el-form-item :label="t('camerasAdd.onvifAddress')" prop="onvif_address">
             <el-input v-model="cameraForm.onvif_address" :disabled="true" style="width: 400px" />
           </el-form-item>
 
-          <el-form-item label="RTSP 流地址" prop="path" v-if="selectedProfile?.rtspUri">
+          <el-form-item :label="t('camerasAdd.rtspUrl')" prop="path" v-if="selectedProfile?.rtspUri">
             <el-input v-model="cameraForm.path" :disabled="true" style="width: 500px" />
-            <p class="form-hint">从 Profile 获取的 RTSP URI（保存后自动用于播放/录像）</p>
+            <p class="form-hint">{{ t('camerasAdd.rtspUriHint') }}</p>
           </el-form-item>
-        </template>
+</template>
 
         <!-- 高级选项（录像配置）：ONVIF 探测成功后 / RTSP 模式 均显示 -->
         <template v-if="isRtspMode || detectedDevice">
           <el-divider />
-          <el-form-item label="高级选项" class="section-title">
+          <el-form-item :label="t('camerasAdd.advanced')" class="section-title">
             <div class="section-divider" />
           </el-form-item>
 
-          <el-form-item label="启用 PTZ 控制" prop="ptz_enabled" v-if="!isRtspMode">
+          <el-form-item :label="t('camerasAdd.ptzEnabled')" prop="ptz_enabled" v-if="!isRtspMode">
             <el-switch v-model="cameraForm.ptz_enabled" :disabled="!detectedDevice.ptzSupported" />
-            <span v-if="!detectedDevice.ptzSupported" style="margin-left: 8px; color: #909399;">设备不支持 PTZ</span>
+            <span v-if="!detectedDevice.ptzSupported" style="margin-left: 8px; color: #909399;">{{ t('camerasAdd.ptzNotSupported') }}</span>
           </el-form-item>
 
-          <el-form-item label="启用录像" prop="record_enabled">
+          <el-form-item :label="t('camerasAdd.recordEnabled')" prop="record_enabled">
             <el-switch v-model="cameraForm.record_enabled" />
           </el-form-item>
 
-          <el-form-item label="录像类型" prop="record_type">
-            <el-select v-model="cameraForm.record_type" placeholder="选择类型" style="width: 200px">
-              <el-option label="连续录像 (7×24h)" value="continuous" />
-              <el-option v-if="!isRtspMode" label="移动侦测录像" value="motion" />
-              <el-option label="定时录像" value="schedule" />
+          <el-form-item :label="t('camerasAdd.recordType')" prop="record_type">
+            <el-select v-model="cameraForm.record_type" :placeholder="t('camerasAdd.selectType')" style="width: 200px">
+              <el-option :label="t('camerasAdd.recordContinuous')" value="continuous" />
+              <el-option v-if="!isRtspMode" :label="t('camerasAdd.recordMotion')" value="motion" />
+              <el-option :label="t('camerasAdd.recordSchedule')" value="schedule" />
             </el-select>
-            <p class="form-hint" v-if="isRtspMode">移动侦测依赖 ONVIF 事件上报，RTSP 流不支持，故仅提供连续/定时录像</p>
+            <p class="form-hint" v-if="isRtspMode">{{ t('camerasAdd.motionHint') }}</p>
           </el-form-item>
 
-          <el-form-item label="录像计划" prop="record_schedule" v-if="cameraForm.record_type === 'schedule'">
-            <el-input v-model="cameraForm.record_schedule" placeholder="例如：0-23 (全天), 9-18 (工作时间), 22-6 (夜间)" style="width: 300px" />
-            <p class="form-hint">格式：开始小时-结束小时，多个时段用逗号分隔，如：9-12,14-18,22-6</p>
+          <el-form-item :label="t('camerasAdd.recordPlan')" prop="record_schedule" v-if="cameraForm.record_type === 'schedule'">
+            <el-input v-model="cameraForm.record_schedule" :placeholder="t('camerasAdd.schedulePlaceholder')" style="width: 300px" />
+            <p class="form-hint">{{ t('camerasAdd.scheduleHint') }}</p>
           </el-form-item>
-        </template>
+</template>
 
         <div class="form-actions">
-          <el-button @click="goBack">取消</el-button>
+          <el-button @click="goBack">{{ t('camerasAdd.cancel') }}</el-button>
           <el-button type="primary" :loading="submitLoading" @click="submitForm" :disabled="isRtspMode ? editLoading : !detectedDevice || editLoading">
-            <el-icon><Check /></el-icon> {{ isEditMode ? '保存修改' : '保存并启动' }}
+            <el-icon><Check /></el-icon> {{ isEditMode ? t('camerasAdd.saveChanges') : t('camerasAdd.saveAndStart') }}
           </el-button>
         </div>
       </el-form>
@@ -181,23 +181,25 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Check, Search } from '@element-plus/icons-vue'
 import { api } from '@/api'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 
-// 编辑模式：路由 /cameras/edit/:id（复用本页），预填现有参数与录像配置
+
 const isEditMode = computed(() => route.name === 'CameraEdit')
 const editId = computed(() => (route.params.id ? Number(route.params.id) : null))
 const editLoading = ref(false)
-const loadedRecordEnabled = ref(true) // 编辑加载时的录像开关（判断保存后是否需要重启流）
+const loadedRecordEnabled = ref(true)
 
-// 当前是否 RTSP 手动模式
+
 const isRtspMode = computed(() => cameraForm.protocol === 'rtsp')
 
-// 由摄像头字段拼装 RTSP 完整地址（编辑模式加载时预填；密码不回显，不拼入）
+
 const buildRtspUrl = (c: any) => {
   if (!c) return ''
   const port = c.port || 554
@@ -212,7 +214,7 @@ const cameraFormRef = ref()
 const cameraForm = reactive({
   name: '',
   description: '',
-  protocol: 'onvif', // 默认 ONVIF
+  protocol: 'onvif',
   ip: '',
   port: 80,
   path: '',
@@ -222,7 +224,7 @@ const cameraForm = reactive({
   device_id: '',
   username: '',
   password: '',
-  rtsp_url: '', // RTSP 模式：完整流地址（提交时解析为 ip/port/path/账号）
+  rtsp_url: '',
   width: 1920,
   height: 1080,
   fps: 25,
@@ -234,7 +236,7 @@ const cameraForm = reactive({
   record_schedule: '0-23',
 })
 
-// 探测到的设备信息
+
 const detectedDevice = ref<{
   ip: string
   port: number
@@ -265,7 +267,7 @@ const detectedDevice = ref<{
 const detectError = ref('')
 const detectSuccess = ref('')
 
-// 编辑模式：加载现有摄像头，预填所有参数与录像配置
+
 const loadCameraForEdit = async () => {
   if (!editId.value) return
   editLoading.value = true
@@ -273,11 +275,11 @@ const loadCameraForEdit = async () => {
     const res: any = await api.cameras.get(editId.value)
     const c = res?.data || res
     if (!c || !c.id) {
-      ElMessage.error('摄像头不存在')
+      ElMessage.error(t('camerasAdd.cameraNotFound'))
       goBack()
       return
     }
-    // 预填表单（密码留空 = 保存时不修改）
+
     cameraForm.name = c.name || ''
     cameraForm.description = c.description || ''
     cameraForm.protocol = c.protocol || 'onvif'
@@ -288,8 +290,8 @@ const loadCameraForEdit = async () => {
     cameraForm.onvif_profile_token = c.onvif_profile_token || ''
     cameraForm.device_id = c.device_id || ''
     cameraForm.username = c.username || ''
-    cameraForm.password = '' // 不回显密码；留空表示不修改
-    // RTSP 摄像头：拼装完整流地址预填（密码不回显，不拼入；保存时留空 = 沿用原密码）
+    cameraForm.password = ''
+
     cameraForm.rtsp_url = c.protocol === 'rtsp' ? buildRtspUrl(c) : ''
     cameraForm.width = c.width || 1920
     cameraForm.height = c.height || 1080
@@ -299,14 +301,14 @@ const loadCameraForEdit = async () => {
     cameraForm.ptz_enabled = !!c.ptz_enabled
     cameraForm.record_enabled = c.record_enabled !== false
     cameraForm.record_type = c.record_type || 'continuous'
-    // RTSP 无 ONVIF 事件上报，不支持移动侦测；历史脏数据（rtsp+motion）回退为连续录像
+
     if (c.protocol === 'rtsp' && cameraForm.record_type === 'motion') {
       cameraForm.record_type = 'continuous'
     }
     cameraForm.record_schedule = c.record_schedule || '0-23'
     loadedRecordEnabled.value = cameraForm.record_enabled
 
-    // 用现有数据构造 detectedDevice，让 Profile/录像配置等区块直接可见，无需重新探测
+
     detectedDevice.value = {
       ip: c.ip || '',
       port: c.port || 80,
@@ -319,7 +321,7 @@ const loadCameraForEdit = async () => {
       mac: '',
       profiles: c.onvif_profile_token ? [{
         token: c.onvif_profile_token,
-        name: '当前配置',
+        name: t('camerasAdd.currentProfile'),
         width: c.width || 1920,
         height: c.height || 1080,
         fps: c.fps || 25,
@@ -331,11 +333,11 @@ const loadCameraForEdit = async () => {
         ptzConfigurationToken: '',
       }] : [],
       xaddr: c.onvif_address || '',
-      ptzSupported: true, // 编辑时允许切换 PTZ（真实支持情况以探测为准）
+      ptzSupported: true,
     }
   } catch (e) {
     console.error(e)
-    ElMessage.error('加载摄像头信息失败')
+    ElMessage.error(t('camerasAdd.loadFailed'))
   } finally {
     editLoading.value = false
   }
@@ -347,51 +349,51 @@ onMounted(() => {
 
 const cameraRules = computed(() => {
   const base: any = {
-    name: [{ required: true, message: '请输入摄像头名称', trigger: 'blur' }],
+    name: [{ required: true, message: t('camerasAdd.nameRequired'), trigger: 'blur' }],
   }
   if (isRtspMode.value) {
     base.rtsp_url = [
-      { required: true, message: '请粘贴 RTSP 流地址', trigger: 'blur' },
+      { required: true, message: t('camerasAdd.rtspUrlRequired'), trigger: 'blur' },
       {
         validator: (_: any, value: string, cb: any) => {
           if (!value) return cb()
           try {
             const u = new URL(value.trim())
-            if (u.protocol !== 'rtsp:') cb(new Error('仅支持 rtsp:// 开头的地址'))
-            else if (!u.hostname) cb(new Error('地址缺少主机'))
+            if (u.protocol !== 'rtsp:') cb(new Error(t('camerasAdd.rtspOnly')))
+            else if (!u.hostname) cb(new Error(t('camerasAdd.hostRequired')))
             else cb()
           } catch {
-            cb(new Error('RTSP 地址格式不正确'))
+            cb(new Error(t('camerasAdd.rtspInvalid')))
           }
         },
         trigger: 'blur',
       },
     ]
   } else {
-    base.ip = [{ required: true, message: '请输入 IP 地址', trigger: 'blur' }]
-    base.username = [{ required: true, message: '请输入用户名', trigger: 'blur' }]
-    // 编辑模式密码可留空（留空 = 不修改原密码）
+    base.ip = [{ required: true, message: t('camerasAdd.ipRequired'), trigger: 'blur' }]
+    base.username = [{ required: true, message: t('camerasAdd.usernameRequired'), trigger: 'blur' }]
+
     base.password = isEditMode.value
       ? [{ required: false, message: '', trigger: 'blur' }]
-      : [{ required: true, message: '请输入密码', trigger: 'blur' }]
-    base.onvif_profile_token = [{ required: true, message: '请选择视频配置文件', trigger: 'change' }]
+      : [{ required: true, message: t('camerasAdd.passwordRequired'), trigger: 'blur' }]
+    base.onvif_profile_token = [{ required: true, message: t('camerasAdd.profileRequired'), trigger: 'change' }]
   }
   return base
 })
 
-// 当前选中的 Profile
+
 const selectedProfile = computed(() => {
   if (!detectedDevice.value || !cameraForm.onvif_profile_token) return null
   return detectedDevice.value.profiles.find(p => p.token === cameraForm.onvif_profile_token) || null
 })
 
-// 格式化 Profile 标签
+
 const formatProfileLabel = (p: any) => {
-  const type = p.name.toLowerCase().includes('main') || p.width >= 1920 ? '主码流' : '子码流'
+  const type = p.name.toLowerCase().includes('main') || p.width >= 1920 ? t('camerasAdd.mainStream') : t('camerasAdd.subStream')
   return `${p.name} (${p.width}×${p.height}, ${p.codec.toUpperCase()}, ${p.bitrate}kbps) [${type}]`
 }
 
-// IP 失焦时自动填充默认名称
+
 const onIpBlur = () => {
   if (cameraForm.ip && !cameraForm.name) {
     const suffix = cameraForm.ip.split('.').pop()
@@ -399,7 +401,7 @@ const onIpBlur = () => {
   }
 }
 
-// 自动探测并填充所有配置
+
 const autoDetectAndFill = async () => {
   detectLoading.value = true
   detectError.value = ''
@@ -407,11 +409,11 @@ const autoDetectAndFill = async () => {
 
   try {
     const res: any = await api.cameras.probe(cameraForm.ip, cameraForm.username, cameraForm.password)
-    // probe 返回 { device, auth_required, error }
+
     const d = res?.device
 
     if (!d) {
-      detectError.value = res?.error || '探测失败：无响应数据'
+      detectError.value = res?.error || t('camerasAdd.probeNoData')
       return
     }
 
@@ -427,28 +429,28 @@ const autoDetectAndFill = async () => {
       mac: d.mac,
       profiles: d.profiles || [],
       xaddr: d.xaddr,
-      ptzSupported: false, // 可后续扩展
+      ptzSupported: false,
     }
 
-    // 自动填充表单
+
     cameraForm.onvif_address = d.xaddr
     cameraForm.port = d.port
-    
-    // 自动生成名称：厂商_型号_IP后缀
+
+
     if (!cameraForm.name && d.manufacturer && d.model) {
       const ipSuffix = d.ip.split('.').pop()
       cameraForm.name = `${d.manufacturer}_${d.model}_${ipSuffix}`
     }
 
-    // 自动选择主码流（分辨率最高或名称含 main）
+
     if (d.profiles && d.profiles.length > 0) {
-      let mainProfile = d.profiles.find(p => 
+      let mainProfile = d.profiles.find(p =>
         p.name.toLowerCase().includes('main') || p.width >= 1920
       ) || d.profiles.reduce((max, p) => p.width * p.height > max.width * max.height ? p : max)
       cameraForm.onvif_profile_token = mainProfile.token
     }
 
-    // 填充技术参数（从选中的 Profile）
+
     if (selectedProfile.value) {
       const p = selectedProfile.value
       cameraForm.width = p.width
@@ -461,19 +463,19 @@ const autoDetectAndFill = async () => {
       }
     }
 
-    detectSuccess.value = `探测成功：${d.manufacturer} ${d.model} (${d.profiles?.length || 0} 个配置文件)`
-    ElMessage.success('自动配置完成，请确认后保存')
+    detectSuccess.value = t('camerasAdd.probeSuccess', { manufacturer: d.manufacturer, model: d.model, count: d.profiles?.length || 0 })
+    ElMessage.success(t('camerasAdd.autoConfigDone'))
 
   } catch (e: any) {
     console.error(e)
-    detectError.value = `探测失败：${e.message || '网络错误/认证失败/设备不支持 ONVIF'}`
+    detectError.value = t('camerasAdd.probeFailed', { message: e.message || t('camerasAdd.networkErrorAuth') })
     ElMessage.error(detectError.value)
   } finally {
     detectLoading.value = false
   }
 }
 
-// 监听 Profile 变化，自动更新技术参数
+
 watch(() => cameraForm.onvif_profile_token, (newToken) => {
   if (!newToken || !detectedDevice.value) return
   const p = detectedDevice.value.profiles.find(pr => pr.token === newToken)
@@ -492,13 +494,13 @@ const submitForm = async () => {
     await cameraFormRef.value?.validate()
     submitLoading.value = true
 
-    // RTSP 模式：解析完整流地址为结构化字段
+
     if (isRtspMode.value) {
       let u: URL
       try {
         u = new URL(cameraForm.rtsp_url.trim())
       } catch {
-        ElMessage.error('RTSP 地址格式不正确，请检查后重试')
+        ElMessage.error(t('camerasAdd.rtspInvalidRetry'))
         return
       }
       const payload = {
@@ -507,9 +509,9 @@ const submitForm = async () => {
         protocol: 'rtsp',
         ip: u.hostname,
         port: u.port ? Number(u.port) : 554,
-        username: u.username,   // 无账号时为空
-        password: u.password,   // 编辑时留空 = 沿用原密码
-        path: u.pathname + u.search, // 保留 ?query 参数（如海康 profile 参数）
+        username: u.username,
+        password: u.password,
+        path: u.pathname + u.search,
         width: cameraForm.width,
         height: cameraForm.height,
         fps: cameraForm.fps,
@@ -525,18 +527,18 @@ const submitForm = async () => {
         try {
           const st: any = await api.cameras.status(editId.value)
           if (st?.is_streaming) await api.cameras.restart(editId.value)
-        } catch (e) { /* 重启失败不阻塞保存结果 */ }
-        ElMessage.success('摄像头已更新，正在重连...')
+        } catch (e) {  }
+        ElMessage.success(t('camerasAdd.updatedReconnecting'))
         router.push(`/cameras/${editId.value}`)
       } else {
         const res = await api.cameras.create(payload)
-        ElMessage.success('摄像头添加成功，正在尝试连接...')
+        ElMessage.success(t('camerasAdd.addedConnecting'))
         router.push(`/cameras/${res.id}`)
       }
       return
     }
 
-    // ONVIF 模式：提交时只发送需要的字段
+
     const dd = detectedDevice.value
     const payload = {
       name: cameraForm.name,
@@ -548,7 +550,7 @@ const submitForm = async () => {
       onvif_address: cameraForm.onvif_address,
       onvif_profile_token: cameraForm.onvif_profile_token,
       username: cameraForm.username,
-      password: cameraForm.password, // 编辑时留空 = 不修改原密码
+      password: cameraForm.password,
       width: cameraForm.width,
       height: cameraForm.height,
       fps: cameraForm.fps,
@@ -558,7 +560,7 @@ const submitForm = async () => {
       record_enabled: cameraForm.record_enabled,
       record_type: cameraForm.record_type,
       record_schedule: cameraForm.record_schedule,
-      // ONVIF 设备信息：只提交探测到的真实值（'-' 占位符不提交，后端保留原值/连接时自动抓取）
+
       manufacturer: dd && dd.manufacturer && dd.manufacturer !== '-' ? dd.manufacturer : '',
       model: dd && dd.model && dd.model !== '-' ? dd.model : '',
       firmware: dd && dd.firmware && dd.firmware !== '-' ? dd.firmware : '',
@@ -567,8 +569,8 @@ const submitForm = async () => {
 
     if (isEditMode.value && editId.value) {
       await api.cameras.update(editId.value, payload)
-      // 录像开关未变化但流正在运行：录像模式/Profile 等变更需要重启流才生效
-      // （开关变化时后端 UpdateCamera 已自动启停）
+
+
       let restarted = false
       if (cameraForm.record_enabled === loadedRecordEnabled.value) {
         try {
@@ -577,13 +579,13 @@ const submitForm = async () => {
             await api.cameras.restart(editId.value)
             restarted = true
           }
-        } catch (e) { /* 重启失败不阻塞保存结果 */ }
+        } catch (e) {  }
       }
-      ElMessage.success('摄像头已更新' + (restarted ? '，正在重连流生效...' : ''))
+      ElMessage.success(t('camerasAdd.updated') + (restarted ? t('camerasAdd.updatedReconnectingStream') : ''))
       router.push(`/cameras/${editId.value}`)
     } else {
       const res = await api.cameras.create(payload)
-      ElMessage.success('摄像头添加成功，正在尝试连接...')
+      ElMessage.success(t('camerasAdd.addedConnecting'))
       router.push(`/cameras/${res.id}`)
     }
   } catch (e) {
@@ -601,15 +603,15 @@ const goBack = () => {
 
 <style scoped lang="scss">
 .camera-add-page {
-  .page-header { 
-    display:flex; align-items:center; gap:16px; margin-bottom:24px; 
-    h2{margin:0;font-size:20px;font-weight:600;} 
+  .page-header {
+    display:flex; align-items:center; gap:16px; margin-bottom:24px;
+    h2{margin:0;font-size:20px;font-weight:600;}
   }
   .section-title { margin: 24px 0 12px !important; font-size: 14px; font-weight: 600; color: #303133; }
   .section-divider { border-top: 1px solid #e6e9ed; margin-top: 8px; }
   .form-hint { margin: 4px 0 0; font-size: 12px; color: #909399; }
-  .form-actions { 
-    display:flex; justify-content:flex-end; gap:12px; margin-top:24px; padding-top:16px; border-top:1px solid #f0f0f0; 
+  .form-actions {
+    display:flex; justify-content:flex-end; gap:12px; margin-top:24px; padding-top:16px; border-top:1px solid #f0f0f0;
   }
 }
 </style>

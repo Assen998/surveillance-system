@@ -3,15 +3,15 @@
     <div class="login-box">
       <div class="login-header">
         <el-icon class="logo-icon"><VideoCamera /></el-icon>
-        <h1>监控录像系统</h1>
-        <p>请输入账号密码登录</p>
+        <h1>{{ t('login.title') }}</h1>
+        <p>{{ t('login.subtitle') }}</p>
       </div>
 
       <el-form :model="form" :rules="rules" ref="formRef" class="login-form" label-width="0">
         <el-form-item prop="username">
           <el-input
             v-model="form.username"
-            placeholder="用户名"
+            :placeholder="t('login.username')"
             prefix-icon="User"
             @keyup.enter="handleLogin"
           />
@@ -19,35 +19,54 @@
         <el-form-item prop="password">
           <el-input
             v-model="form.password"
-            placeholder="密码"
+            :placeholder="t('login.password')"
             prefix-icon="Lock"
             show-password
             @keyup.enter="handleLogin"
           />
         </el-form-item>
         <el-form-item>
-          <el-button :loading="loading" type="primary" block @click="handleLogin">登录</el-button>
+          <el-button :loading="loading" type="primary" block @click="handleLogin">{{ t('login.submit') }}</el-button>
         </el-form-item>
       </el-form>
 
       <div class="login-footer">
-        <span>默认账号: admin / admin123</span>
+        <el-dropdown trigger="click" @command="switchLang">
+          <span class="lang-switch">
+            <el-icon><Position /></el-icon>
+            {{ currentLangLabel }}
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-for="l in SUPPORTED_LANGS" :key="l.value" :command="l.value" :disabled="l.value === lang">
+                {{ l.label }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+</template>
+        </el-dropdown>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { VideoCamera, User, Lock } from '@element-plus/icons-vue'
+import { VideoCamera, User, Lock, Position } from '@element-plus/icons-vue'
 import { api } from '@/api'
 import { useAuthStore } from '@/stores'
+import { useI18n } from 'vue-i18n'
+import { setLang, SUPPORTED_LANGS } from '@/i18n'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { t, locale } = useI18n()
 const formRef = ref()
+
+const lang = computed(() => locale.value as string)
+const currentLangLabel = computed(() => SUPPORTED_LANGS.find(l => l.value === lang.value)?.label || '中文')
+const switchLang = (v: string) => setLang(v as 'zh' | 'en')
 
 const loading = ref(false)
 const form = reactive({
@@ -55,10 +74,10 @@ const form = reactive({
   password: '',
 })
 
-const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
-}
+const rules = computed(() => ({
+  username: [{ required: true, message: t('login.usernameRequired'), trigger: 'blur' }],
+  password: [{ required: true, message: t('login.passwordRequired'), trigger: 'blur' }],
+}))
 
 const handleLogin = async () => {
   await formRef.value?.validate()
@@ -67,7 +86,7 @@ const handleLogin = async () => {
     const res = await api.auth.login(form.username, form.password)
     authStore.setToken(res.token)
     authStore.setUser(res.user)
-    ElMessage.success('登录成功')
+    ElMessage.success(t('login.success'))
     router.push('/dashboard')
   } catch (e) {
     console.error(e)
@@ -76,7 +95,6 @@ const handleLogin = async () => {
   }
 }
 
-// 首次运行（尚无管理员账户）→ 跳转到初始化设置页
 onMounted(async () => {
   try {
     const res: any = await api.setup.status()
@@ -84,7 +102,6 @@ onMounted(async () => {
       router.replace('/setup')
     }
   } catch (e) {
-    // 接口不可用时停留在登录页（可能是旧版本后端，无 /setup 路由）
     console.warn('setup status check failed', e)
   }
 })
@@ -158,6 +175,14 @@ onMounted(async () => {
     text-align: center;
     color: #909399;
     font-size: 12px;
+
+    .lang-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      outline: none;
+    }
   }
 }
 </style>

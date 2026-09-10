@@ -15,9 +15,9 @@ import (
 	"time"
 )
 
-// Client 轻量 WebDAV 客户端（PUT 上传 / MKCOL 建目录 / PROPFIND 检查）
+
 type Client struct {
-	baseURL  string // 如 http://192.168.1.100:5005/webdav（无尾斜杠）
+	baseURL  string
 	username string
 	password string
 	http     *http.Client
@@ -34,7 +34,7 @@ func NewClient(baseURL, username, password string) *Client {
 	}
 }
 
-// buildURL 拼接远程路径（远程路径以 / 分隔，不含前导 /）
+
 func (c *Client) buildURL(remotePath string) string {
 	remotePath = strings.TrimPrefix(strings.TrimSpace(remotePath), "/")
 	if remotePath == "" {
@@ -54,13 +54,12 @@ func (c *Client) newRequest(method, remotePath string, body io.Reader) (*http.Re
 	return req, nil
 }
 
-// Check 检查 WebDAV 服务器连通性与凭据（PROPFIND 基础路径）
-// 返回 error：401/403 凭据错误；网络错误；其他 HTTP 错误
+
 func (c *Client) Check(basePath string) error {
 	return c.check(basePath, 60*time.Second)
 }
 
-// CheckWithTimeout 同 Check，可自定义超时（环境检测等快速探测场景）
+
 func (c *Client) CheckWithTimeout(basePath string, timeout time.Duration) error {
 	return c.check(basePath, timeout)
 }
@@ -98,7 +97,7 @@ func (c *Client) check(basePath string, timeout time.Duration) error {
 	case resp.StatusCode == http.StatusMultiStatus || resp.StatusCode == http.StatusOK:
 		return nil
 	case resp.StatusCode == http.StatusNotFound:
-		// 服务器可达、凭据有效，但基础目录不存在 —— 可接受（上传前会 MKCOL）
+
 		return nil
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
 		return fmt.Errorf("WebDAV 认证失败（401/403），请检查用户名/密码")
@@ -109,7 +108,7 @@ func (c *Client) check(basePath string, timeout time.Duration) error {
 	}
 }
 
-// Delete 删除远程文件（404 视为已不存在，不算错误）
+
 func (c *Client) Delete(remotePath string) error {
 	req, err := c.newRequest("DELETE", remotePath, nil)
 	if err != nil {
@@ -132,7 +131,7 @@ func (c *Client) Delete(remotePath string) error {
 	}
 }
 
-// EnsureDir 确保远程目录存在（MKCOL；已存在视为成功）
+
 func (c *Client) EnsureDir(remotePath string) error {
 	if strings.TrimSpace(remotePath) == "" {
 		return nil
@@ -152,7 +151,7 @@ func (c *Client) EnsureDir(remotePath string) error {
 	case http.StatusCreated, http.StatusNoContent:
 		return nil
 	case http.StatusMethodNotAllowed, http.StatusConflict:
-		// 目录已存在
+
 		return nil
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return fmt.Errorf("WebDAV 认证失败 (HTTP %d)", resp.StatusCode)
@@ -161,7 +160,7 @@ func (c *Client) EnsureDir(remotePath string) error {
 	}
 }
 
-// Upload 上传本地文件到远程路径（自动创建父目录）
+
 func (c *Client) Upload(localPath, remotePath string) error {
 	f, err := os.Open(localPath)
 	if err != nil {
@@ -169,7 +168,7 @@ func (c *Client) Upload(localPath, remotePath string) error {
 	}
 	defer f.Close()
 
-	// 创建父目录
+
 	if idx := strings.LastIndex(remotePath, "/"); idx > 0 {
 		if err := c.EnsureDir(remotePath[:idx]); err != nil {
 			return err
@@ -195,7 +194,7 @@ func (c *Client) Upload(localPath, remotePath string) error {
 	return fmt.Errorf("上传失败 (HTTP %d): %s", resp.StatusCode, remotePath)
 }
 
-// Entry WebDAV 目录内的一项（文件或子目录）
+
 type Entry struct {
 	Name    string
 	Size    int64
@@ -203,7 +202,7 @@ type Entry struct {
 	IsDir   bool
 }
 
-// propfindResponse PROPFIND 返回的 multistatus 结构（仅取所需字段）
+
 type propfindResponse struct {
 	XMLName   xml.Name `xml:"multistatus"`
 	Responses []struct {
@@ -221,7 +220,7 @@ type propfindResponse struct {
 	} `xml:"response"`
 }
 
-// List 列出远程目录的直接子项（PROPFIND Depth: 1）
+
 func (c *Client) List(remotePath string) ([]Entry, error) {
 	body := []byte(`<?xml version="1.0" encoding="utf-8"?>
 <propfind xmlns="DAV:">
@@ -260,7 +259,7 @@ func (c *Client) List(remotePath string) ([]Entry, error) {
 		return nil, fmt.Errorf("解析 PROPFIND 响应失败: %w", err)
 	}
 
-	// 规范化被列目录的路径，用于跳过"目录本身"这一项
+
 	baseTrim := strings.Trim(strings.TrimSpace(remotePath), "/")
 
 	var entries []Entry
@@ -270,7 +269,7 @@ func (c *Client) List(remotePath string) ([]Entry, error) {
 			href = u.Path
 		}
 		name := path.Base(strings.TrimRight(href, "/"))
-		// 跳过目录本身（其 href 的 basename 与被列目录相同，且是 collection）
+
 		isDir := r.Propstat.Prop.ResourceType.Collection != nil
 		selfName := path.Base(baseTrim)
 		if name == selfName && isDir {
@@ -299,9 +298,7 @@ func (c *Client) List(remotePath string) ([]Entry, error) {
 	return entries, nil
 }
 
-// Get 流式读取远程文件（GET，支持 Range 请求头，用于浏览器分段播放/拖动进度）。
-// 返回的 *http.Response 由调用方负责 Close。使用无总超时的独立客户端（大文件下载不受 60s 限制），
-// 并通过 ctx 在客户端断开时中止上游请求。
+
 func (c *Client) Get(ctx context.Context, remotePath, rangeHeader string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.buildURL(remotePath), nil)
 	if err != nil {
@@ -321,12 +318,12 @@ func (c *Client) Get(ctx context.Context, remotePath, rangeHeader string) (*http
 	return resp, nil
 }
 
-// TestAndUpload 测试连接并上传一个小文件验证可写性
+
 func (c *Client) TestAndUpload(basePath string) error {
 	if err := c.Check(basePath); err != nil {
 		return err
 	}
-	// 上传 1 字节测试文件验证写权限
+
 	testRemote := strings.TrimPrefix(basePath, "/")
 	if testRemote != "" {
 		testRemote += "/"
@@ -342,7 +339,7 @@ func (c *Client) TestAndUpload(basePath string) error {
 	if err := c.Upload(tmp, testRemote); err != nil {
 		return fmt.Errorf("连接正常但写入失败: %w", err)
 	}
-	// 清理测试文件（DELETE，失败忽略）
+
 	if req, err := c.newRequest("DELETE", testRemote, nil); err == nil {
 		if resp, err := c.http.Do(req); err == nil {
 			resp.Body.Close()

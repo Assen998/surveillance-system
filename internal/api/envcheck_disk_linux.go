@@ -4,7 +4,6 @@ package api
 
 import "syscall"
 
-
 func diskFreeBytes(dir string) (int64, error) {
 	var st syscall.Statfs_t
 	if err := syscall.Statfs(dir, &st); err != nil {

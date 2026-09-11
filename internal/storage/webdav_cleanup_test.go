@@ -12,7 +12,6 @@ import (
 	"github.com/yourorg/surveillance-system/internal/config"
 )
 
-
 type fakeWebdavServer struct {
 	mu      sync.Mutex
 	files   map[string]int64

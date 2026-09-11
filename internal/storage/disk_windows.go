@@ -6,7 +6,6 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-
 func diskUsage(path string) (total uint64, free uint64, err error) {
 	var freeBytesAvailable, totalBytes, totalFreeBytes uint64
 	pathPtr, err := windows.UTF16PtrFromString(path)

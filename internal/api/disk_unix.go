@@ -4,7 +4,6 @@ package api
 
 import "syscall"
 
-
 func diskUsageMB(path string) (totalMB, usedMB int64) {
 	st := new(syscall.Statfs_t)
 	if err := syscall.Statfs(path, st); err != nil {

@@ -15,7 +15,6 @@ import (
 	"time"
 )
 
-
 type Client struct {
 	baseURL  string
 	username string
@@ -33,7 +32,6 @@ func NewClient(baseURL, username, password string) *Client {
 		},
 	}
 }
-
 
 func (c *Client) buildURL(remotePath string) string {
 	remotePath = strings.TrimPrefix(strings.TrimSpace(remotePath), "/")
@@ -54,11 +52,9 @@ func (c *Client) newRequest(method, remotePath string, body io.Reader) (*http.Re
 	return req, nil
 }
 
-
 func (c *Client) Check(basePath string) error {
 	return c.check(basePath, 60*time.Second)
 }
-
 
 func (c *Client) CheckWithTimeout(basePath string, timeout time.Duration) error {
 	return c.check(basePath, timeout)
@@ -66,7 +62,7 @@ func (c *Client) CheckWithTimeout(basePath string, timeout time.Duration) error 
 
 func (c *Client) check(basePath string, timeout time.Duration) error {
 	if c.baseURL == "" {
-		return fmt.Errorf("WebDAV URL 未配置")
+		return fmt.Errorf("WebDAV URL not configured")
 	}
 
 	body := []byte(`<?xml version="1.0" encoding="utf-8"?>
@@ -88,7 +84,7 @@ func (c *Client) check(basePath string, timeout time.Duration) error {
 	client.Timeout = timeout
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("无法连接 WebDAV 服务器: %w", err)
+		return fmt.Errorf("cannot connect to WebDAV server: %w", err)
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
@@ -100,14 +96,13 @@ func (c *Client) check(basePath string, timeout time.Duration) error {
 
 		return nil
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return fmt.Errorf("WebDAV 认证失败（401/403），请检查用户名/密码")
+		return fmt.Errorf("WebDAV authentication failed (401/403), check username/password")
 	case resp.StatusCode >= 500:
-		return fmt.Errorf("WebDAV 服务器错误 (HTTP %d)", resp.StatusCode)
+		return fmt.Errorf("WebDAV server error (HTTP %d)", resp.StatusCode)
 	default:
-		return fmt.Errorf("WebDAV 响应异常 (HTTP %d)", resp.StatusCode)
+		return fmt.Errorf("unexpected WebDAV response (HTTP %d)", resp.StatusCode)
 	}
 }
-
 
 func (c *Client) Delete(remotePath string) error {
 	req, err := c.newRequest("DELETE", remotePath, nil)
@@ -116,7 +111,7 @@ func (c *Client) Delete(remotePath string) error {
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("删除远程文件失败: %w", err)
+		return fmt.Errorf("failed to delete remote file: %w", err)
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
@@ -127,10 +122,9 @@ func (c *Client) Delete(remotePath string) error {
 	case resp.StatusCode == http.StatusNotFound:
 		return nil
 	default:
-		return fmt.Errorf("删除远程文件失败 (HTTP %d)", resp.StatusCode)
+		return fmt.Errorf("failed to delete remote file (HTTP %d)", resp.StatusCode)
 	}
 }
-
 
 func (c *Client) EnsureDir(remotePath string) error {
 	if strings.TrimSpace(remotePath) == "" {
@@ -142,7 +136,7 @@ func (c *Client) EnsureDir(remotePath string) error {
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("MKCOL 请求失败: %w", err)
+		return fmt.Errorf("MKCOL request failed: %w", err)
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
@@ -154,20 +148,18 @@ func (c *Client) EnsureDir(remotePath string) error {
 
 		return nil
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return fmt.Errorf("WebDAV 认证失败 (HTTP %d)", resp.StatusCode)
+		return fmt.Errorf("WebDAV authentication failed (HTTP %d)", resp.StatusCode)
 	default:
-		return fmt.Errorf("创建远程目录失败 (HTTP %d): %s", resp.StatusCode, remotePath)
+		return fmt.Errorf("failed to create remote directory (HTTP %d): %s", resp.StatusCode, remotePath)
 	}
 }
-
 
 func (c *Client) Upload(localPath, remotePath string) error {
 	f, err := os.Open(localPath)
 	if err != nil {
-		return fmt.Errorf("打开本地文件失败: %w", err)
+		return fmt.Errorf("failed to open local file: %w", err)
 	}
 	defer f.Close()
-
 
 	if idx := strings.LastIndex(remotePath, "/"); idx > 0 {
 		if err := c.EnsureDir(remotePath[:idx]); err != nil {
@@ -183,7 +175,7 @@ func (c *Client) Upload(localPath, remotePath string) error {
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("PUT 上传失败: %w", err)
+		return fmt.Errorf("PUT upload failed: %w", err)
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
@@ -191,9 +183,8 @@ func (c *Client) Upload(localPath, remotePath string) error {
 	if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
-	return fmt.Errorf("上传失败 (HTTP %d): %s", resp.StatusCode, remotePath)
+	return fmt.Errorf("upload failed (HTTP %d): %s", resp.StatusCode, remotePath)
 }
-
 
 type Entry struct {
 	Name    string
@@ -201,7 +192,6 @@ type Entry struct {
 	ModTime time.Time
 	IsDir   bool
 }
-
 
 type propfindResponse struct {
 	XMLName   xml.Name `xml:"multistatus"`
@@ -219,7 +209,6 @@ type propfindResponse struct {
 		} `xml:"propstat"`
 	} `xml:"response"`
 }
-
 
 func (c *Client) List(remotePath string) ([]Entry, error) {
 	body := []byte(`<?xml version="1.0" encoding="utf-8"?>
@@ -240,25 +229,24 @@ func (c *Client) List(remotePath string) ([]Entry, error) {
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("PROPFIND 失败: %w", err)
+		return nil, fmt.Errorf("PROPFIND failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusMultiStatus && resp.StatusCode != http.StatusOK {
 		io.Copy(io.Discard, resp.Body)
-		return nil, fmt.Errorf("PROPFIND 失败 (HTTP %d)", resp.StatusCode)
+		return nil, fmt.Errorf("PROPFIND failed (HTTP %d)", resp.StatusCode)
 	}
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("读取 PROPFIND 响应失败: %w", err)
+		return nil, fmt.Errorf("failed to read PROPFIND response: %w", err)
 	}
 
 	var pr propfindResponse
 	if err := xml.Unmarshal(raw, &pr); err != nil {
-		return nil, fmt.Errorf("解析 PROPFIND 响应失败: %w", err)
+		return nil, fmt.Errorf("failed to parse PROPFIND response: %w", err)
 	}
-
 
 	baseTrim := strings.Trim(strings.TrimSpace(remotePath), "/")
 
@@ -298,7 +286,6 @@ func (c *Client) List(remotePath string) ([]Entry, error) {
 	return entries, nil
 }
 
-
 func (c *Client) Get(ctx context.Context, remotePath, rangeHeader string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.buildURL(remotePath), nil)
 	if err != nil {
@@ -313,11 +300,10 @@ func (c *Client) Get(ctx context.Context, remotePath, rangeHeader string) (*http
 	streamClient := &http.Client{Timeout: 0}
 	resp, err := streamClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("GET 读取失败: %w", err)
+		return nil, fmt.Errorf("GET read failed: %w", err)
 	}
 	return resp, nil
 }
-
 
 func (c *Client) TestAndUpload(basePath string) error {
 	if err := c.Check(basePath); err != nil {
@@ -337,7 +323,7 @@ func (c *Client) TestAndUpload(basePath string) error {
 	defer os.Remove(tmp)
 
 	if err := c.Upload(tmp, testRemote); err != nil {
-		return fmt.Errorf("连接正常但写入失败: %w", err)
+		return fmt.Errorf("connection OK but write failed: %w", err)
 	}
 
 	if req, err := c.newRequest("DELETE", testRemote, nil); err == nil {

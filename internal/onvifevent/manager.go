@@ -7,14 +7,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/yourorg/surveillance-system/internal/config"
 	"github.com/yourorg/surveillance-system/internal/database"
 	"github.com/yourorg/surveillance-system/internal/models"
 	"github.com/yourorg/surveillance-system/pkg/onvif"
-	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
-
 
 type Manager struct {
 	cfg    *config.Config
@@ -23,9 +22,7 @@ type Manager struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-
 	onAlert func(*models.Alert)
-
 
 	mu         sync.Mutex
 	lastRecord map[uint]map[string]time.Time
@@ -43,7 +40,6 @@ func NewManager(cfg *config.Config, onAlert func(*models.Alert)) *Manager {
 	}
 }
 
-
 func (m *Manager) pollInterval() int {
 	if m.cfg.Camera.OnvifEvent.PollInterval > 0 {
 		return m.cfg.Camera.OnvifEvent.PollInterval
@@ -51,43 +47,41 @@ func (m *Manager) pollInterval() int {
 	return 10
 }
 
-
 func (m *Manager) Start() error {
 	if !m.cfg.Camera.OnvifEvent.Enabled {
-		logrus.Info("ONVIF 事件订阅未启用，跳过启动")
+		logrus.Info("ONVIF event subscription disabled, skipping start")
 		return nil
 	}
 
 	var cams []models.Camera
 	if err := m.db.Where("protocol = ? AND deleted_at IS NULL", "onvif").Find(&cams).Error; err != nil {
-		return fmt.Errorf("查询 onvif 摄像头失败: %w", err)
+		return fmt.Errorf("failed to query ONVIF camera: %w", err)
 	}
 
 	if len(cams) == 0 {
-		logrus.Info("没有 onvif 协议摄像头，跳过事件订阅")
+		logrus.Info("no ONVIF protocol cameras found, skipping event subscription")
 		return nil
 	}
 
 	for _, cam := range cams {
 		if cam.OnvifAddress == "" {
-			logrus.Warnf("摄像头 %s 未配置 ONVIF 地址，跳过事件订阅", cam.Name)
+			logrus.Warnf("camera %s has no ONVIF address configured, skipping event subscription", cam.Name)
 			continue
 		}
 		cam := cam
 		m.wg.Add(1)
 		go m.subscribeLoop(cam)
 	}
-	logrus.Infof("ONVIF 事件订阅已启动，共 %d 个摄像头", len(cams))
+	logrus.Infof("ONVIF event subscription started, %d cameras in total", len(cams))
 	return nil
 }
 
 func (m *Manager) Stop() error {
 	m.cancel()
 	m.wg.Wait()
-	logrus.Info("ONVIF 事件订阅管理器已停止")
+	logrus.Info("ONVIF event subscription manager stopped")
 	return nil
 }
-
 
 func (m *Manager) subscribeLoop(cam models.Camera) {
 	defer m.wg.Done()
@@ -110,15 +104,14 @@ func (m *Manager) subscribeLoop(cam models.Camera) {
 			}
 		}
 		if err != nil {
-			logrus.Warnf("摄像头 %s 事件订阅失败: %v，%d 秒后重试", cam.Name, err, m.pollInterval())
+			logrus.Warnf("camera %s event subscription failed: %v, retrying in %d s", cam.Name, err, m.pollInterval())
 			if !sleepCtx(m.ctx, time.Duration(m.pollInterval())*time.Second) {
 				return
 			}
 			continue
 		}
 
-		logrus.Infof("摄像头 %s 事件订阅成功: %s", cam.Name, sub.Address)
-
+		logrus.Infof("camera %s event subscription successful: %s", cam.Name, sub.Address)
 
 		active := m.pullLoop(client, cam, sub)
 
@@ -135,10 +128,8 @@ func (m *Manager) subscribeLoop(cam models.Camera) {
 	}
 }
 
-
 func (m *Manager) pullLoop(client *onvif.Client, cam models.Camera, sub *onvif.EventSubscription) bool {
 	poll := m.pollInterval()
-
 
 	var deadline time.Time
 	if !sub.TerminationTime.IsZero() {
@@ -157,7 +148,7 @@ func (m *Manager) pullLoop(client *onvif.Client, cam models.Camera, sub *onvif.E
 			if m.ctx.Err() != nil {
 				return false
 			}
-			logrus.Warnf("摄像头 %s 拉取事件失败: %v", cam.Name, err)
+			logrus.Warnf("camera %s failed to pull events: %v", cam.Name, err)
 			return true
 		}
 
@@ -165,23 +156,20 @@ func (m *Manager) pullLoop(client *onvif.Client, cam models.Camera, sub *onvif.E
 			m.handleEvent(cam, ev)
 		}
 
-
 		if !deadline.IsZero() && time.Now().After(deadline) {
-			logrus.Infof("摄像头 %s 事件订阅到期，重新订阅", cam.Name)
+			logrus.Infof("camera %s event subscription expired, resubscribing", cam.Name)
 			return true
 		}
 	}
 }
 
-
 func (m *Manager) handleEvent(cam models.Camera, ev onvif.OnvifEvent) {
 	alertType, level, isAlarm := mapTopicToAlert(ev.Topic)
 
 	if !isAlarm {
-		logrus.Debugf("忽略非报警 ONVIF 事件: Camera=%s topic=%s", cam.Name, ev.Topic)
+		logrus.Debugf("ignoring non-alarm ONVIF event: Camera=%s topic=%s", cam.Name, ev.Topic)
 		return
 	}
-
 
 	if m.duplicated(cam.ID, alertType) {
 		return
@@ -200,17 +188,15 @@ func (m *Manager) handleEvent(cam models.Camera, ev onvif.OnvifEvent) {
 	}
 
 	if err := m.db.Create(alert).Error; err != nil {
-		logrus.Errorf("保存 ONVIF 报警失败 camera=%d: %v", cam.ID, err)
+		logrus.Errorf("failed to save ONVIF alert camera=%d: %v", cam.ID, err)
 		return
 	}
-	logrus.Infof("ONVIF 报警: Camera=%s(%d), Type=%s, Level=%s, Topic=%s", cam.Name, cam.ID, alertType, level, ev.Topic)
-
+	logrus.Infof("ONVIF alert: Camera=%s(%d), Type=%s, Level=%s, Topic=%s", cam.Name, cam.ID, alertType, level, ev.Topic)
 
 	if m.onAlert != nil {
 		m.onAlert(alert)
 	}
 }
-
 
 func (m *Manager) duplicated(cameraID uint, alertType string) bool {
 	m.mu.Lock()
@@ -229,7 +215,6 @@ func (m *Manager) duplicated(cameraID uint, alertType string) bool {
 	return false
 }
 
-
 func sleepCtx(ctx context.Context, d time.Duration) bool {
 	t := time.NewTimer(d)
 	defer t.Stop()
@@ -241,10 +226,8 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-
 func mapTopicToAlert(topic string) (alertType string, level string, isAlarm bool) {
 	t := strings.ToLower(topic)
-
 
 	if strings.HasPrefix(t, "monitoring/") ||
 		strings.Contains(t, "processorusage") ||
@@ -275,7 +258,6 @@ func mapTopicToAlert(topic string) (alertType string, level string, isAlarm bool
 	}
 }
 
-
 func buildMessage(alertType string, ev onvif.OnvifEvent) string {
 	if ev.Topic != "" {
 		return fmt.Sprintf("摄像头上报事件: %s", ev.Topic)
@@ -295,7 +277,6 @@ func buildMessage(alertType string, ev onvif.OnvifEvent) string {
 		return "摄像头上报报警事件"
 	}
 }
-
 
 func buildDetails(ev onvif.OnvifEvent) string {
 	if len(ev.Items) == 0 {

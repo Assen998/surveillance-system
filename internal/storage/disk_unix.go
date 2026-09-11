@@ -6,7 +6,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-
 func diskUsage(path string) (total uint64, free uint64, err error) {
 	var stat unix.Statfs_t
 	if err := unix.Statfs(path, &stat); err != nil {

@@ -19,10 +19,7 @@ type Config struct {
 	Update   UpdateConfig   `mapstructure:"update" yaml:"update"`
 }
 
-
 type UpdateConfig struct {
-
-
 	Proxy string `mapstructure:"proxy" yaml:"proxy"`
 
 	GitHubRepo string `mapstructure:"github_repo" yaml:"github_repo"`
@@ -70,7 +67,7 @@ type LocalStorageConfig struct {
 	MaxDays         int    `mapstructure:"max_days" yaml:"max_days"`
 
 	MaxStorageGB    float64 `mapstructure:"max_storage_gb" yaml:"max_storage_gb"`
-	CleanupInterval int    `mapstructure:"cleanup_interval" yaml:"cleanup_interval"`
+	CleanupInterval int     `mapstructure:"cleanup_interval" yaml:"cleanup_interval"`
 }
 
 type WebdavConfig struct {
@@ -84,17 +81,16 @@ type WebdavConfig struct {
 
 	MaxStorageGB float64 `mapstructure:"max_storage_gb" yaml:"max_storage_gb" json:"max_storage_gb"`
 
-
 	Only bool `mapstructure:"only" yaml:"only" json:"only"`
 }
 
 type MinIOConfig struct {
-	Enabled    bool   `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
-	Endpoint   string `mapstructure:"endpoint" yaml:"endpoint" json:"endpoint"`
-	AccessKey  string `mapstructure:"access_key" yaml:"access_key" json:"access_key"`
-	SecretKey  string `mapstructure:"secret_key" yaml:"secret_key" json:"secret_key"`
-	Bucket     string `mapstructure:"bucket" yaml:"bucket" json:"bucket"`
-	UseSSL     bool   `mapstructure:"use_ssl" yaml:"use_ssl" json:"use_ssl"`
+	Enabled   bool   `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+	Endpoint  string `mapstructure:"endpoint" yaml:"endpoint" json:"endpoint"`
+	AccessKey string `mapstructure:"access_key" yaml:"access_key" json:"access_key"`
+	SecretKey string `mapstructure:"secret_key" yaml:"secret_key" json:"secret_key"`
+	Bucket    string `mapstructure:"bucket" yaml:"bucket" json:"bucket"`
+	UseSSL    bool   `mapstructure:"use_ssl" yaml:"use_ssl" json:"use_ssl"`
 
 	BasePath string `mapstructure:"base_path" yaml:"base_path" json:"base_path"`
 
@@ -102,15 +98,14 @@ type MinIOConfig struct {
 
 	MaxStorageGB float64 `mapstructure:"max_storage_gb" yaml:"max_storage_gb" json:"max_storage_gb"`
 
-
 	Only bool `mapstructure:"only" yaml:"only" json:"only"`
 }
 
 type CameraConfig struct {
-	DiscoveryTimeout  int `mapstructure:"discovery_timeout" yaml:"discovery_timeout"`
-	StreamTimeout     int `mapstructure:"stream_timeout" yaml:"stream_timeout"`
-	ReconnectInterval int `mapstructure:"reconnect_interval" yaml:"reconnect_interval"`
-	MaxReconnect      int `mapstructure:"max_reconnect" yaml:"max_reconnect"`
+	DiscoveryTimeout  int  `mapstructure:"discovery_timeout" yaml:"discovery_timeout"`
+	StreamTimeout     int  `mapstructure:"stream_timeout" yaml:"stream_timeout"`
+	ReconnectInterval int  `mapstructure:"reconnect_interval" yaml:"reconnect_interval"`
+	MaxReconnect      int  `mapstructure:"max_reconnect" yaml:"max_reconnect"`
 	SnapshotEnabled   bool `mapstructure:"snapshot_enabled" yaml:"snapshot_enabled"`
 	SnapshotInterval  int  `mapstructure:"snapshot_interval" yaml:"snapshot_interval"`
 
@@ -121,9 +116,7 @@ type CameraConfig struct {
 	PreviewStream string `mapstructure:"preview_stream" yaml:"preview_stream"`
 }
 
-
 type MotionRecordConfig struct {
-
 	Duration int `mapstructure:"duration" yaml:"duration"`
 
 	PreRecord int `mapstructure:"pre_record" yaml:"pre_record"`
@@ -132,7 +125,6 @@ type MotionRecordConfig struct {
 }
 
 type OnvifEventConfig struct {
-
 	Enabled bool `mapstructure:"enabled" yaml:"enabled"`
 
 	PollInterval int `mapstructure:"poll_interval" yaml:"poll_interval"`
@@ -155,27 +147,26 @@ type WebhookAlertConfig struct {
 	Enabled bool   `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
 	URL     string `mapstructure:"url" yaml:"url" json:"url"`
 
-
 	Type string `mapstructure:"type" yaml:"type" json:"type"`
 }
 
 type EmailAlertConfig struct {
-	Enabled    bool     `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
-	SMTPHost   string   `mapstructure:"smtp_host" yaml:"smtp_host" json:"smtp_host"`
-	SMTPPort   int      `mapstructure:"smtp_port" yaml:"smtp_port" json:"smtp_port"`
-	Username   string   `mapstructure:"username" yaml:"username" json:"username"`
-	Password   string   `mapstructure:"password" yaml:"password" json:"password"`
-	From       string   `mapstructure:"from" yaml:"from" json:"from"`
-	To         []string `mapstructure:"to" yaml:"to" json:"to"`
+	Enabled  bool     `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+	SMTPHost string   `mapstructure:"smtp_host" yaml:"smtp_host" json:"smtp_host"`
+	SMTPPort int      `mapstructure:"smtp_port" yaml:"smtp_port" json:"smtp_port"`
+	Username string   `mapstructure:"username" yaml:"username" json:"username"`
+	Password string   `mapstructure:"password" yaml:"password" json:"password"`
+	From     string   `mapstructure:"from" yaml:"from" json:"from"`
+	To       []string `mapstructure:"to" yaml:"to" json:"to"`
 }
 
 type SMSAlertConfig struct {
-	Enabled       bool   `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
-	Provider      string `mapstructure:"provider" yaml:"provider" json:"provider"`
-	AccessKey     string `mapstructure:"access_key" yaml:"access_key" json:"access_key"`
-	SecretKey     string `mapstructure:"secret_key" yaml:"secret_key" json:"secret_key"`
-	SignName      string `mapstructure:"sign_name" yaml:"sign_name" json:"sign_name"`
-	TemplateCode  string `mapstructure:"template_code" yaml:"template_code" json:"template_code"`
+	Enabled      bool   `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+	Provider     string `mapstructure:"provider" yaml:"provider" json:"provider"`
+	AccessKey    string `mapstructure:"access_key" yaml:"access_key" json:"access_key"`
+	SecretKey    string `mapstructure:"secret_key" yaml:"secret_key" json:"secret_key"`
+	SignName     string `mapstructure:"sign_name" yaml:"sign_name" json:"sign_name"`
+	TemplateCode string `mapstructure:"template_code" yaml:"template_code" json:"template_code"`
 }
 
 type GB28181Config struct {
@@ -205,7 +196,6 @@ func Load(configPath string) (*Config, error) {
 	v.SetConfigFile(configPath)
 	v.SetConfigType("yaml")
 
-
 	v.AutomaticEnv()
 	v.SetEnvPrefix("SURVEILLANCE")
 
@@ -217,7 +207,6 @@ func Load(configPath string) (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, err
 	}
-
 
 	cfg.Storage.Local.RootPath = expandPath(cfg.Storage.Local.RootPath)
 	cfg.Database.SQLite.Path = expandPath(cfg.Database.SQLite.Path)
@@ -238,11 +227,9 @@ func expandPath(path string) string {
 	return path
 }
 
-
 func GetConfig() *Config {
 	return GlobalConfig
 }
-
 
 func (c *Config) Save(path string) error {
 	data, err := yaml.Marshal(c)

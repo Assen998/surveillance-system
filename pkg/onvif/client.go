@@ -19,7 +19,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-
 type Client struct {
 	timeout    time.Duration
 	httpClient *http.Client
@@ -39,51 +38,48 @@ type digestAuthState struct {
 }
 
 type DeviceInfo struct {
-	IP            string    `json:"ip"`
-	Port          int       `json:"port"`
-	Name          string    `json:"name"`
-	Manufacturer  string    `json:"manufacturer"`
-	Model         string    `json:"model"`
-	Firmware      string    `json:"firmware"`
-	SerialNumber  string    `json:"serialNumber"`
-	HardwareId    string    `json:"hardwareId"`
-	MAC           string    `json:"mac"`
-	Profiles      []Profile `json:"profiles"`
-	XAddr         string    `json:"xaddr"`
-	AuthRequired  bool      `json:"auth_required"`
+	IP           string    `json:"ip"`
+	Port         int       `json:"port"`
+	Name         string    `json:"name"`
+	Manufacturer string    `json:"manufacturer"`
+	Model        string    `json:"model"`
+	Firmware     string    `json:"firmware"`
+	SerialNumber string    `json:"serialNumber"`
+	HardwareId   string    `json:"hardwareId"`
+	MAC          string    `json:"mac"`
+	Profiles     []Profile `json:"profiles"`
+	XAddr        string    `json:"xaddr"`
+	AuthRequired bool      `json:"auth_required"`
 }
 
 type Profile struct {
-	Token               string `json:"token"`
-	Name                string `json:"name"`
-	Width               int    `json:"width"`
-	Height              int    `json:"height"`
-	FPS                 int    `json:"fps"`
-	Bitrate             int    `json:"bitrate"`
-	Codec               string `json:"codec"`
-	RTSPUri             string `json:"rtspUri"`
-	VideoSourceTok      string `json:"videoSourceTok"`
-	VideoEncoderTok     string `json:"videoEncoderTok"`
+	Token                 string `json:"token"`
+	Name                  string `json:"name"`
+	Width                 int    `json:"width"`
+	Height                int    `json:"height"`
+	FPS                   int    `json:"fps"`
+	Bitrate               int    `json:"bitrate"`
+	Codec                 string `json:"codec"`
+	RTSPUri               string `json:"rtspUri"`
+	VideoSourceTok        string `json:"videoSourceTok"`
+	VideoEncoderTok       string `json:"videoEncoderTok"`
 	PTZConfigurationToken string `json:"ptzConfigurationToken"`
 }
-
 
 type StreamTransport string
 
 const (
-	TransportUDP      StreamTransport = "UDP"
-	TransportTCP      StreamTransport = "TCP"
-	TransportHTTP     StreamTransport = "HTTP"
-	TransportRTSP     StreamTransport = "RTSP"
+	TransportUDP  StreamTransport = "UDP"
+	TransportTCP  StreamTransport = "TCP"
+	TransportHTTP StreamTransport = "HTTP"
+	TransportRTSP StreamTransport = "RTSP"
 )
 
-
 type StreamProfile struct {
-	ProfileToken  string
-	Transport     StreamTransport
-	StreamType    string
+	ProfileToken string
+	Transport    StreamTransport
+	StreamType   string
 }
-
 
 func NewClient(timeoutSec int) *Client {
 	return &Client{
@@ -94,13 +90,11 @@ func NewClient(timeoutSec int) *Client {
 	}
 }
 
-
 func (c *Client) SetCredentials(username, password string) {
 	c.username = username
 	c.password = password
 	c.digestAuth = nil
 }
-
 
 func (c *Client) Discover(network string) ([]*DeviceInfo, error) {
 	devices, err := c.wsDiscovery(network)
@@ -143,31 +137,27 @@ func (c *Client) wsDiscovery(network string) ([]*DeviceInfo, error) {
 	return devices, nil
 }
 
-
 func (c *Client) ProbeSingle(ip string) *DeviceInfo {
 	info, _ := c.probeSingle(ip)
 	return info
 }
 
-
 func (c *Client) ProbeSingleEx(ip string) (*DeviceInfo, bool) {
 	return c.probeSingle(ip)
 }
-
 
 func (c *Client) probeSingle(ip string) (*DeviceInfo, bool) {
 	ports := []int{80, 8000, 8080, 5000, 8899}
 
 	type result struct {
-		port int
-		info *DeviceInfo
+		port         int
+		info         *DeviceInfo
 		authRequired bool
 	}
 
 	resultChan := make(chan result, len(ports))
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
-
 
 	for _, port := range ports {
 		go func(p int) {
@@ -178,7 +168,6 @@ func (c *Client) probeSingle(ip string) (*DeviceInfo, bool) {
 			default:
 				info, authRequired := c.getDeviceInfo(addr)
 				if info != nil {
-
 
 					if c.username != "" && c.password != "" {
 						mediaAddr := c.ResolveMediaXAddr(addr)
@@ -198,7 +187,6 @@ func (c *Client) probeSingle(ip string) (*DeviceInfo, bool) {
 			}
 		}(port)
 	}
-
 
 	sawAuthRequired := false
 	completed := 0
@@ -235,7 +223,6 @@ done:
 	return nil, sawAuthRequired
 }
 
-
 func (c *Client) doRequest(ctx context.Context, xaddr, soapAction, body string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, "POST", xaddr, bytes.NewReader([]byte(body)))
 	if err != nil {
@@ -244,7 +231,6 @@ func (c *Client) doRequest(ctx context.Context, xaddr, soapAction, body string) 
 
 	req.Header.Set("Content-Type", "application/soap+xml; charset=utf-8")
 	req.Header.Set("SOAPAction", soapAction)
-
 
 	if c.username != "" && c.password != "" {
 		if c.digestAuth != nil && c.digestAuth.nonce != "" {
@@ -261,7 +247,6 @@ func (c *Client) doRequest(ctx context.Context, xaddr, soapAction, body string) 
 	if err != nil {
 		return nil, err
 	}
-
 
 	if resp.StatusCode == 401 && c.username != "" && c.password != "" {
 		resp.Body.Close()
@@ -291,9 +276,7 @@ func (c *Client) doRequestWithDigest(ctx context.Context, xaddr, soapAction, bod
 
 func (c *Client) parseDigestChallenge(challenge string) {
 
-
 	c.digestAuth = &digestAuthState{}
-
 
 	challenge = strings.TrimPrefix(challenge, "Digest ")
 
@@ -336,14 +319,11 @@ func (c *Client) buildDigestAuth(method, uri string) string {
 	nc := fmt.Sprintf("%08x", c.digestAuth.nc)
 	cnonce := generateCnonce()
 
-
 	ha1 := md5.Sum([]byte(fmt.Sprintf("%s:%s:%s", c.username, c.digestAuth.realm, c.password)))
 	ha1Str := hex.EncodeToString(ha1[:])
 
-
 	ha2 := md5.Sum([]byte(fmt.Sprintf("%s:%s", method, uri)))
 	ha2Str := hex.EncodeToString(ha2[:])
-
 
 	response := md5.Sum([]byte(fmt.Sprintf("%s:%s:%s:%s:%s:%s",
 		ha1Str, c.digestAuth.nonce, nc, cnonce, c.digestAuth.qop, ha2Str)))
@@ -368,15 +348,13 @@ func generateCnonce() string {
 	return hex.EncodeToString(b)[:16]
 }
 
-
 type Capabilities struct {
-	DeviceXAddr string
-	MediaXAddr  string
-	EventsXAddr string
-	PTZXAddr    string
+	DeviceXAddr  string
+	MediaXAddr   string
+	EventsXAddr  string
+	PTZXAddr     string
 	ImagingXAddr string
 }
-
 
 func (c *Client) GetCapabilities(xaddr string) (*Capabilities, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
@@ -413,7 +391,6 @@ func (c *Client) GetCapabilities(xaddr string) (*Capabilities, error) {
 	return caps, nil
 }
 
-
 func (c *Client) ResolveMediaXAddr(deviceXAddr string) string {
 	caps, err := c.GetCapabilities(deviceXAddr)
 	if err == nil && caps.MediaXAddr != "" {
@@ -421,7 +398,6 @@ func (c *Client) ResolveMediaXAddr(deviceXAddr string) string {
 	}
 	return deviceXAddr
 }
-
 
 func (c *Client) ResolveEventsXAddr(deviceXAddr string) string {
 	caps, err := c.GetCapabilities(deviceXAddr)
@@ -431,7 +407,6 @@ func (c *Client) ResolveEventsXAddr(deviceXAddr string) string {
 	return deviceXAddr
 }
 
-
 func extractServiceXAddr(raw, service string) string {
 	re := regexp.MustCompile(`(?s)<(?:[^>]*:)?` + service + `[^>]*>\s*<(?:[^>]*:)?XAddr[^>]*>([^<]+)</(?:[^>]*:)?XAddr>`)
 	if m := re.FindStringSubmatch(raw); len(m) >= 2 {
@@ -439,7 +414,6 @@ func extractServiceXAddr(raw, service string) string {
 	}
 	return ""
 }
-
 
 func (c *Client) getDeviceInfo(xaddr string) (*DeviceInfo, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
@@ -452,7 +426,6 @@ func (c *Client) getDeviceInfo(xaddr string) (*DeviceInfo, bool) {
 		return nil, false
 	}
 	defer resp.Body.Close()
-
 
 	if resp.StatusCode == 401 {
 		return nil, true
@@ -477,11 +450,10 @@ func (c *Client) GetDeviceInfo(xaddr string) (*DeviceInfo, error) {
 	body, _ := io.ReadAll(resp.Body)
 	info := parseDeviceInfo(xaddr, string(body))
 	if info == nil {
-		return nil, fmt.Errorf("解析设备信息失败")
+		return nil, fmt.Errorf("failed to parse device information")
 	}
 	return info, nil
 }
-
 
 func (c *Client) GetProfiles(xaddr string) ([]Profile, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
@@ -499,7 +471,6 @@ func (c *Client) GetProfiles(xaddr string) ([]Profile, error) {
 	return parseProfiles(string(body))
 }
 
-
 func (c *Client) GetStreamUri(xaddr, profileToken string, transport StreamTransport) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
@@ -516,7 +487,6 @@ func (c *Client) GetStreamUri(xaddr, profileToken string, transport StreamTransp
 	respBody, _ := io.ReadAll(resp.Body)
 	return parseStreamUri(string(respBody))
 }
-
 
 func (c *Client) GetStreamUriWithRetry(xaddr string, profiles []Profile, preferredToken string, transport StreamTransport, maxRetries int) (string, *Profile, error) {
 
@@ -546,14 +516,14 @@ func (c *Client) GetStreamUriWithRetry(xaddr string, profiles []Profile, preferr
 
 	}
 
-	return "", nil, fmt.Errorf("所有配置文件尝试失败: %v", lastErr)
+	return "", nil, fmt.Errorf("all profile attempts failed: %v", lastErr)
 }
 
 func (c *Client) PTZControl(xaddr, command string, speed float64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	body := fmt.Sprintf(getPTZBody(command, speed))
+	body := getPTZBody(command, speed)
 	resp, err := c.doRequest(ctx, xaddr,
 		`"http://www.onvif.org/ver20/ptz/wsdl/ContinuousMove"`,
 		body)
@@ -564,7 +534,6 @@ func (c *Client) PTZControl(xaddr, command string, speed float64) error {
 
 	return nil
 }
-
 
 func getDeviceInfoBody() string {
 	return `<?xml version="1.0" encoding="UTF-8"?>
@@ -594,7 +563,6 @@ func getCapabilitiesBody() string {
   </s:Body>
 </s:Envelope>`
 }
-
 
 func getStreamUriBody(transport StreamTransport) string {
 	proto := "RTSP"
@@ -656,18 +624,17 @@ func getPTZBody(command string, speed float64) string {
 </s:Envelope>`, "profile_token_placeholder", x, y, z)
 }
 
-
 type soapEnvelope struct {
 	XMLName xml.Name `xml:"Envelope"`
 	Body    soapBody `xml:"Body"`
 }
 
 type soapBody struct {
-	XMLName      xml.Name       `xml:"Body"`
-	DeviceInfo   *devInfoResp   `xml:"GetDeviceInformationResponse"`
-	Profiles     *profilesResp  `xml:"GetProfilesResponse"`
-	StreamUri    *streamUriResp `xml:"GetStreamUriResponse"`
-	Fault        *soapFault     `xml:"Fault"`
+	XMLName    xml.Name       `xml:"Body"`
+	DeviceInfo *devInfoResp   `xml:"GetDeviceInformationResponse"`
+	Profiles   *profilesResp  `xml:"GetProfilesResponse"`
+	StreamUri  *streamUriResp `xml:"GetStreamUriResponse"`
+	Fault      *soapFault     `xml:"Fault"`
 }
 
 type devInfoResp struct {
@@ -683,15 +650,15 @@ type profilesResp struct {
 }
 
 type profileXml struct {
-	Token string `xml:"token,attr"`
-	Name  string `xml:"Name"`
+	Token                    string `xml:"token,attr"`
+	Name                     string `xml:"Name"`
 	VideoSourceConfiguration struct {
 		Token string `xml:"token,attr"`
 	} `xml:"VideoSourceConfiguration"`
 	VideoEncoderConfiguration struct {
-		Token     string `xml:"token,attr"`
-		Name      string `xml:"Name"`
-		Encoding  string `xml:"Encoding"`
+		Token      string `xml:"token,attr"`
+		Name       string `xml:"Name"`
+		Encoding   string `xml:"Encoding"`
 		Resolution struct {
 			Width  int `xml:"Width"`
 			Height int `xml:"Height"`
@@ -768,14 +735,14 @@ func parseProfiles(body string) ([]Profile, error) {
 	var profiles []Profile
 	for _, p := range env.Body.Profiles.Profiles {
 		profile := Profile{
-			Token:            p.Token,
-			Name:             p.Name,
-			Width:            p.VideoEncoderConfiguration.Resolution.Width,
-			Height:           p.VideoEncoderConfiguration.Resolution.Height,
-			Codec:            strings.ToLower(p.VideoEncoderConfiguration.Encoding),
-			Bitrate:          p.VideoEncoderConfiguration.RateControl.BitrateLimit,
-			VideoSourceTok:   p.VideoSourceConfiguration.Token,
-			VideoEncoderTok:  p.VideoEncoderConfiguration.Token,
+			Token:                 p.Token,
+			Name:                  p.Name,
+			Width:                 p.VideoEncoderConfiguration.Resolution.Width,
+			Height:                p.VideoEncoderConfiguration.Resolution.Height,
+			Codec:                 strings.ToLower(p.VideoEncoderConfiguration.Encoding),
+			Bitrate:               p.VideoEncoderConfiguration.RateControl.BitrateLimit,
+			VideoSourceTok:        p.VideoSourceConfiguration.Token,
+			VideoEncoderTok:       p.VideoEncoderConfiguration.Token,
 			PTZConfigurationToken: p.PTZConfiguration.Token,
 		}
 		profiles = append(profiles, profile)
@@ -794,9 +761,8 @@ func parseStreamUri(body string) (string, error) {
 		return env.Body.StreamUri.MediaUri.Uri, nil
 	}
 
-	return "", fmt.Errorf("未找到流地址")
+	return "", fmt.Errorf("stream URL not found")
 }
-
 
 func incIP(ip net.IP) {
 	for i := len(ip) - 1; i >= 0; i-- {
@@ -827,7 +793,6 @@ type probeMatch struct {
 	Port         int
 }
 
-
 func (c *Client) WSDiscover(timeoutSec int) ([]*DeviceInfo, error) {
 
 	mcastAddr := &net.UDPAddr{
@@ -835,17 +800,14 @@ func (c *Client) WSDiscover(timeoutSec int) ([]*DeviceInfo, error) {
 		Port: 3702,
 	}
 
-
 	conn, err := net.ListenPacket("udp4", "0.0.0.0:0")
 	if err != nil {
-		return nil, fmt.Errorf("监听 UDP 失败: %w", err)
+		return nil, fmt.Errorf("failed to listen on UDP: %w", err)
 	}
 	defer conn.Close()
 
-
 	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
 	conn.SetReadDeadline(deadline)
-
 
 	messageID := fmt.Sprintf("uuid:%s", generateMessageID())
 	probeMsg := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
@@ -864,11 +826,9 @@ func (c *Client) WSDiscover(timeoutSec int) ([]*DeviceInfo, error) {
   </e:Body>
 </e:Envelope>`, messageID)
 
-
 	if _, err := conn.WriteTo([]byte(probeMsg), mcastAddr); err != nil {
-		return nil, fmt.Errorf("发送组播 Probe 失败: %w", err)
+		return nil, fmt.Errorf("failed to send multicast Probe: %w", err)
 	}
-
 
 	matches := make(map[string]*probeMatch)
 	buf := make([]byte, 8192)
@@ -893,12 +853,11 @@ func (c *Client) WSDiscover(timeoutSec int) ([]*DeviceInfo, error) {
 				key := pm.XAddr
 				if _, exists := matches[key]; !exists {
 					matches[key] = pm
-					logrus.Debugf("WS-Discovery 发现设备: %s (%s)", pm.Manufacturer, pm.XAddr)
+					logrus.Debugf("WS-Discovery device found: %s (%s)", pm.Manufacturer, pm.XAddr)
 				}
 			}
 		}
 	}
-
 
 	var results []*DeviceInfo
 	for _, pm := range matches {
@@ -935,11 +894,9 @@ func (c *Client) WSDiscover(timeoutSec int) ([]*DeviceInfo, error) {
 
 var xaddrsRe = regexp.MustCompile(`<[^>]*XAddrs[^>]*>([^<]+)</[^>]*XAddrs>`)
 
-
 func (c *Client) parseProbeMatch(body string) *probeMatch {
 
 	pm := &probeMatch{}
-
 
 	if m := xaddrsRe.FindStringSubmatch(body); len(m) > 1 {
 		for _, x := range strings.Fields(m[1]) {
@@ -949,7 +906,6 @@ func (c *Client) parseProbeMatch(body string) *probeMatch {
 			}
 		}
 	}
-
 
 	if pm.XAddr != "" {
 		if strings.HasPrefix(pm.XAddr, "http://") {
@@ -964,7 +920,6 @@ func (c *Client) parseProbeMatch(body string) *probeMatch {
 			}
 		}
 	}
-
 
 	extract := func(tag string) string {
 		start := strings.Index(body, "<"+tag+">")
@@ -994,7 +949,6 @@ func (c *Client) parseProbeMatch(body string) *probeMatch {
 	return pm
 }
 
-
 func generateMessageID() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
@@ -1009,7 +963,6 @@ func firstNonEmpty(values ...string) string {
 	}
 	return ""
 }
-
 
 func (c *Client) quickONVIFCheck(ip string, timeout time.Duration) *DeviceInfo {
 	client := &http.Client{Timeout: timeout}
@@ -1068,7 +1021,6 @@ func (c *Client) quickONVIFCheck(ip string, timeout time.Duration) *DeviceInfo {
 	}
 }
 
-
 func (c *Client) SweepCIDR(cidr string, perProbe time.Duration) []*DeviceInfo {
 	ip, ipNet, err := net.ParseCIDR(cidr)
 	if err != nil {
@@ -1116,7 +1068,6 @@ func (c *Client) SweepCIDR(cidr string, perProbe time.Duration) []*DeviceInfo {
 	return results
 }
 
-
 func LocalScanCIDRs() []string {
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -1158,7 +1109,6 @@ func LocalScanCIDRs() []string {
 	return cidrs
 }
 
-
 func (c *Client) SweepLocalSubnets(overall time.Duration) ([]*DeviceInfo, error) {
 	cidrs := LocalScanCIDRs()
 	if len(cidrs) == 0 {
@@ -1199,17 +1149,13 @@ func (c *Client) SweepLocalSubnets(overall time.Duration) ([]*DeviceInfo, error)
 	return results, nil
 }
 
-
 type EventSubscription struct {
-
 	Address string
 
 	TerminationTime time.Time
 }
 
-
 type OnvifEvent struct {
-
 	Topic string
 
 	UtcTime time.Time
@@ -1217,13 +1163,11 @@ type OnvifEvent struct {
 	Items map[string]string
 }
 
-
 const (
 	soapActionCreatePullPoint = `"http://www.onvif.org/ver10/events/wsdl/PullPointSubscription/CreatePullPointSubscriptionRequest"`
 	soapActionPullMessages    = `"http://www.onvif.org/ver10/events/wsdl/PullPointSubscription/PullMessagesRequest"`
 	soapActionUnsubscribe     = `"http://www.onvif.org/ver10/events/wsdl/PullPointSubscription/UnsubscribeRequest"`
 )
-
 
 func (c *Client) CreatePullPointSubscription(xaddr string) (*EventSubscription, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
@@ -1238,7 +1182,7 @@ func (c *Client) CreatePullPointSubscription(xaddr string) (*EventSubscription, 
 
 	if resp.StatusCode != http.StatusOK {
 		io.Copy(io.Discard, resp.Body)
-		return nil, fmt.Errorf("创建事件订阅失败 (HTTP %d)", resp.StatusCode)
+		return nil, fmt.Errorf("failed to create event subscription (HTTP %d)", resp.StatusCode)
 	}
 
 	raw, err := io.ReadAll(resp.Body)
@@ -1248,14 +1192,12 @@ func (c *Client) CreatePullPointSubscription(xaddr string) (*EventSubscription, 
 	return parseSubscription(string(raw))
 }
 
-
 func (c *Client) PullMessages(subscriptionURL string, timeoutSec int) ([]OnvifEvent, error) {
 	if timeoutSec <= 0 {
 		timeoutSec = 10
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec+10)*time.Second)
 	defer cancel()
-
 
 	origTimeout := c.httpClient.Timeout
 	c.httpClient.Timeout = time.Duration(timeoutSec+10) * time.Second
@@ -1270,7 +1212,7 @@ func (c *Client) PullMessages(subscriptionURL string, timeoutSec int) ([]OnvifEv
 
 	if resp.StatusCode != http.StatusOK {
 		io.Copy(io.Discard, resp.Body)
-		return nil, fmt.Errorf("拉取事件失败 (HTTP %d)", resp.StatusCode)
+		return nil, fmt.Errorf("failed to pull events (HTTP %d)", resp.StatusCode)
 	}
 
 	raw, err := io.ReadAll(resp.Body)
@@ -1279,7 +1221,6 @@ func (c *Client) PullMessages(subscriptionURL string, timeoutSec int) ([]OnvifEv
 	}
 	return parseNotificationMessages(string(raw)), nil
 }
-
 
 func (c *Client) Unsubscribe(subscriptionURL string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
@@ -1294,7 +1235,6 @@ func (c *Client) Unsubscribe(subscriptionURL string) error {
 	io.Copy(io.Discard, resp.Body)
 	return nil
 }
-
 
 func getPullPointSubscriptionBody() string {
 	return `<?xml version="1.0" encoding="UTF-8"?>
@@ -1330,7 +1270,6 @@ func getUnsubscribeBody() string {
 </s:Envelope>`
 }
 
-
 var (
 	reSubscriptionAddress = regexp.MustCompile(`<[^>]*(?:wsa5?:)?Address[^>]*>\s*([^<\s]+)\s*</[^>]*(?:wsa5?:)?Address>`)
 	reTerminationTime     = regexp.MustCompile(`<[^>]*TerminationTime[^>]*>\s*([^<]+?)\s*</[^>]*TerminationTime>`)
@@ -1349,7 +1288,7 @@ func parseSubscription(raw string) (*EventSubscription, error) {
 	sub := &EventSubscription{}
 	m := reSubscriptionAddress.FindStringSubmatch(raw)
 	if len(m) < 2 || m[1] == "" {
-		return nil, fmt.Errorf("订阅响应中未找到 SubscriptionReference Address")
+		return nil, fmt.Errorf("SubscriptionReference Address not found in subscription response")
 	}
 	sub.Address = m[1]
 	if tm := reTerminationTime.FindStringSubmatch(raw); len(tm) >= 2 {
@@ -1360,11 +1299,10 @@ func parseSubscription(raw string) (*EventSubscription, error) {
 	return sub, nil
 }
 
-
 func parseOnvifTime(s string) (time.Time, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return time.Time{}, fmt.Errorf("空时间")
+		return time.Time{}, fmt.Errorf("empty time value")
 	}
 	layouts := []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02T15:04:05Z0700", "2006-01-02T15:04:05.000Z"}
 	for _, l := range layouts {
@@ -1372,7 +1310,7 @@ func parseOnvifTime(s string) (time.Time, error) {
 			return t, nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("无法解析时间 %q", s)
+	return time.Time{}, fmt.Errorf("failed to parse time %q", s)
 }
 
 func parseNotificationMessages(raw string) []OnvifEvent {
@@ -1400,7 +1338,6 @@ func parseNotificationMessages(raw string) []OnvifEvent {
 	}
 	return events
 }
-
 
 func normalizeTopic(topic string) string {
 	s := strings.TrimSpace(topic)

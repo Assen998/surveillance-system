@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/yourorg/surveillance-system/internal/config"
 	"github.com/yourorg/surveillance-system/internal/models"
-	"github.com/sirupsen/logrus"
 )
 
 type Manager struct {
@@ -45,37 +45,36 @@ func NewManager(cfg *config.Config) *Manager {
 		ctx:     ctx,
 		cancel:  cancel,
 		templates: map[string]string{
-			"motion":       "🚨 运动检测报警",
-			"intrusion":    "🚨 区域入侵报警",
-			"line_cross":   "🚨 越界报警",
-			"object_detect": "🚨 目标检测报警",
-			"offline":      "⚠️ 摄像头离线",
-			"storage_full": "💾 存储空间不足",
-			"error":        "❌ 系统错误",
+			"motion":        "🚨 Motion detection alert",
+			"intrusion":     "🚨 Zone intrusion alert",
+			"line_cross":    "🚨 Line crossing alert",
+			"object_detect": "🚨 Object detection alert",
+			"offline":       "⚠️ Camera offline",
+			"storage_full":  "💾 Insufficient storage",
+			"error":         "❌ System error",
 		},
 	}
-
 
 	return m
 }
 
 func (m *Manager) Start() error {
 	if !m.cfg.Alert.Enabled {
-		logrus.Info("报警推送未启用，跳过启动")
+		logrus.Info("alert push disabled, skipping start")
 		return nil
 	}
 
 	m.wg.Add(1)
 	go m.processLoop()
 
-	logrus.Info("报警管理器启动完成")
+	logrus.Info("alert manager started")
 	return nil
 }
 
 func (m *Manager) Stop() error {
 	m.cancel()
 	m.wg.Wait()
-	logrus.Info("报警管理器已停止")
+	logrus.Info("alert manager stopped")
 	return nil
 }
 
@@ -83,7 +82,7 @@ func (m *Manager) OnAlert(alert *models.Alert) {
 	select {
 	case m.alertCh <- alert:
 	default:
-		logrus.Warn("报警队列已满，丢弃报警")
+		logrus.Warn("alert queue is full, dropping alert")
 	}
 }
 
@@ -103,51 +102,46 @@ func (m *Manager) processLoop() {
 func (m *Manager) sendAlert(alert *models.Alert) {
 	var wg sync.WaitGroup
 
-
 	if m.cfg.Alert.Channels.Webhook.Enabled && m.cfg.Alert.Channels.Webhook.URL != "" {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			if err := m.sendWebhook(alert, &m.cfg.Alert.Channels.Webhook); err != nil {
-				logrus.Errorf("Webhook 推送失败: %v", err)
+				logrus.Errorf("Webhook push failed: %v", err)
 			}
 		}()
 	}
-
 
 	if m.cfg.Alert.Channels.Email.Enabled {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			if err := m.sendEmail(alert, &m.cfg.Alert.Channels.Email); err != nil {
-				logrus.Errorf("邮件推送失败: %v", err)
+				logrus.Errorf("email push failed: %v", err)
 			}
 		}()
 	}
-
 
 	if m.cfg.Alert.Channels.SMS.Enabled {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			if err := m.sendSMS(alert, &m.cfg.Alert.Channels.SMS); err != nil {
-				logrus.Errorf("短信推送失败: %v", err)
+				logrus.Errorf("SMS push failed: %v", err)
 			}
 		}()
 	}
 
 	wg.Wait()
 
-
 }
 
 func (m *Manager) sendWebhook(alert *models.Alert, wh *config.WebhookAlertConfig) error {
 	if wh.URL == "" {
-		return fmt.Errorf("Webhook URL 未配置")
+		return fmt.Errorf("Webhook URL not configured")
 	}
 	var data []byte
 	var err error
-
 
 	if strings.EqualFold(wh.Type, "gotify") {
 		data, err = m.buildGotifyPayload(alert)
@@ -172,7 +166,6 @@ func (m *Manager) sendWebhook(alert *models.Alert, wh *config.WebhookAlertConfig
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -181,12 +174,11 @@ func (m *Manager) sendWebhook(alert *models.Alert, wh *config.WebhookAlertConfig
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("webhook 返回错误状态码: %d", resp.StatusCode)
+		return fmt.Errorf("webhook returned error status code: %d", resp.StatusCode)
 	}
 
 	return nil
 }
-
 
 type gotifyMessage struct {
 	Title    string `json:"title,omitempty"`
@@ -194,22 +186,20 @@ type gotifyMessage struct {
 	Priority int    `json:"priority"`
 }
 
-
 func (m *Manager) buildGotifyPayload(alert *models.Alert) ([]byte, error) {
 	title := m.templates[alert.Type]
 	if title == "" {
-		title = "🚨 监控报警"
+		title = "🚨 Surveillance alert"
 	}
-
 
 	msg := strings.TrimSpace(alert.Message)
 	if msg == "" {
-		msg = fmt.Sprintf("摄像头 %d 触发 %s 报警", alert.CameraID, alert.Type)
+		msg = fmt.Sprintf("camera %d triggered a %s alert", alert.CameraID, alert.Type)
 	}
 
-	detail := fmt.Sprintf("\n时间：%s", time.Now().Format("2006-01-02 15:04:05"))
+	detail := fmt.Sprintf("\nTime: %s", time.Now().Format("2006-01-02 15:04:05"))
 	if alert.CameraID > 0 {
-		detail = fmt.Sprintf("\n摄像头 ID：%d%s", alert.CameraID, detail)
+		detail = fmt.Sprintf("\nCamera ID: %d%s", alert.CameraID, detail)
 	}
 
 	body := gotifyMessage{
@@ -219,7 +209,6 @@ func (m *Manager) buildGotifyPayload(alert *models.Alert) ([]byte, error) {
 	}
 	return json.Marshal(body)
 }
-
 
 func levelToGotifyPriority(level string) int {
 	switch level {
@@ -239,10 +228,10 @@ func levelToGotifyPriority(level string) int {
 func (m *Manager) sendEmail(alert *models.Alert, em *config.EmailAlertConfig) error {
 	cfg := em
 	if len(cfg.To) == 0 {
-		return fmt.Errorf("未配置收件人")
+		return fmt.Errorf("recipients not configured")
 	}
 
-	subject := fmt.Sprintf("[监控报警] %s - %s", m.templates[alert.Type], alert.Message)
+	subject := fmt.Sprintf("[Surveillance Alert] %s - %s", m.templates[alert.Type], alert.Message)
 	body := m.formatEmailBody(alert)
 
 	auth := smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.SMTPHost)
@@ -282,23 +271,23 @@ func (m *Manager) formatEmailBody(alert *models.Alert) string {
         <div style="background: #f8f9fa; padding: 20px; border-radius: 0 0 8px 8px; border: 1px solid #dee2e6; border-top: none;">
             <table style="width: 100%%; border-collapse: collapse;">
                 <tr>
-                    <td style="padding: 8px 0; font-weight: bold; width: 120px;">报警类型:</td>
+                    <td style="padding: 8px 0; font-weight: bold; width: 120px;">Alert type:</td>
                     <td style="padding: 8px 0;">%s</td>
                 </tr>
                 <tr>
-                    <td style="padding: 8px 0; font-weight: bold;">报警等级:</td>
+                    <td style="padding: 8px 0; font-weight: bold;">Alert level:</td>
                     <td style="padding: 8px 0;"><span style="background: %s; color: white; padding: 2px 8px; border-radius: 4px;">%s</span></td>
                 </tr>
                 <tr>
-                    <td style="padding: 8px 0; font-weight: bold;">摄像头 ID:</td>
+                    <td style="padding: 8px 0; font-weight: bold;">Camera ID:</td>
                     <td style="padding: 8px 0;">%d</td>
                 </tr>
                 <tr>
-                    <td style="padding: 8px 0; font-weight: bold;">报警时间:</td>
+                    <td style="padding: 8px 0; font-weight: bold;">Alert time:</td>
                     <td style="padding: 8px 0;">%s</td>
                 </tr>
                 <tr>
-                    <td style="padding: 8px 0; font-weight: bold;">详细信息:</td>
+                    <td style="padding: 8px 0; font-weight: bold;">Details:</td>
                     <td style="padding: 8px 0;">%s</td>
                 </tr>
             </table>
@@ -313,8 +302,8 @@ func (m *Manager) formatEmailBody(alert *models.Alert) string {
 func (m *Manager) getSnapshotHTML(alert *models.Alert) string {
 	if alert.SnapshotPath != "" {
 		return fmt.Sprintf(`<div style="margin-top: 20px;">
-            <p style="font-weight: bold;">现场抓拍:</p>
-            <img src="cid:snapshot" alt="报警抓拍" style="max-width: 100%%; border: 1px solid #dee2e6; border-radius: 4px;">
+            <p style="font-weight: bold;">Scene snapshot:</p>
+            <img src="cid:snapshot" alt="alert snapshot" style="max-width: 100%%; border: 1px solid #dee2e6; border-radius: 4px;">
         </div>`)
 	}
 	return ""
@@ -323,20 +312,17 @@ func (m *Manager) getSnapshotHTML(alert *models.Alert) string {
 func (m *Manager) sendSMS(alert *models.Alert, sm *config.SMSAlertConfig) error {
 	cfg := sm
 
-
-	logrus.Infof("短信推送 (模拟): 发送给 %s, 内容: %s", cfg.SignName, alert.Message)
-
+	logrus.Infof("SMS push (simulated): to %s, content: %s", cfg.SignName, alert.Message)
 
 	return nil
 }
-
 
 func (m *Manager) SendTestAlert(channel string, override *config.AlertConfig) error {
 	testAlert := &models.Alert{
 		CameraID: 0,
 		Type:     "test",
 		Level:    models.AlertLevelLow,
-		Message:  "这是一条测试报警消息",
+		Message:  "This is a test alert message",
 		Details:  `{"test": true}`,
 	}
 
@@ -353,24 +339,21 @@ func (m *Manager) SendTestAlert(channel string, override *config.AlertConfig) er
 	case "sms":
 		return m.sendSMS(testAlert, &src.Channels.SMS)
 	default:
-		return fmt.Errorf("未知渠道: %s", channel)
+		return fmt.Errorf("unknown channel: %s", channel)
 	}
 }
-
 
 func (m *Manager) SendBatch(alerts []*models.Alert) error {
 	if len(alerts) == 0 {
 		return nil
 	}
 
-
-	_ = fmt.Sprintf("监控系统报警汇总 (%d 条)", len(alerts))
-	body := "<h3>报警详情:</h3><ul>"
+	_ = fmt.Sprintf("surveillance system alert summary (%d alerts)", len(alerts))
+	body := "<h3>Alert details:</h3><ul>"
 	for _, a := range alerts {
 		body += fmt.Sprintf("<li>[%s] %s - %s</li>", a.Level, a.Type, a.Message)
 	}
 	body += "</ul>"
-
 
 	return nil
 }

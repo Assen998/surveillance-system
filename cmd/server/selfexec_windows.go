@@ -8,7 +8,6 @@ import (
 	"syscall"
 )
 
-
 func selfExec(path string, args []string, env []string) error {
 	cmd := exec.Command(path, args...)
 	cmd.Env = env

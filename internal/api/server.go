@@ -32,37 +32,34 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
 
+	embedui "github.com/yourorg/surveillance-system"
 	"github.com/yourorg/surveillance-system/internal/alert"
 	"github.com/yourorg/surveillance-system/internal/camera"
 	"github.com/yourorg/surveillance-system/internal/config"
 	"github.com/yourorg/surveillance-system/internal/database"
 	"github.com/yourorg/surveillance-system/internal/models"
 	"github.com/yourorg/surveillance-system/internal/storage"
-	embedui "github.com/yourorg/surveillance-system"
 	"github.com/yourorg/surveillance-system/pkg/minio"
 	"github.com/yourorg/surveillance-system/pkg/webdav"
 )
 
 type Server struct {
-	cfg          *config.Config
-	cameraMgr    *camera.CameraManager
-	storageMgr   *storage.Manager
-	alertMgr     *alert.Manager
-	router       *gin.Engine
-	wsUpgrader   websocket.Upgrader
+	cfg            *config.Config
+	cameraMgr      *camera.CameraManager
+	storageMgr     *storage.Manager
+	alertMgr       *alert.Manager
+	router         *gin.Engine
+	wsUpgrader     websocket.Upgrader
 	runtimeStorage *storage.RuntimeStorage
-	cfgPath      string
-
+	cfgPath        string
 
 	version   string
 	buildTime string
 	gitCommit string
 	startTime time.Time
 
-
 	restartFunc func(newBinary string) error
 }
-
 
 func (s *Server) SetVersionInfo(version, buildTime, gitCommit string, startTime time.Time) {
 	s.version = version
@@ -71,16 +68,13 @@ func (s *Server) SetVersionInfo(version, buildTime, gitCommit string, startTime 
 	s.startTime = startTime
 }
 
-
 func (s *Server) SetRestartFunc(f func(newBinary string) error) {
 	s.restartFunc = f
 }
 
-
 func (s *Server) SetRuntimeStorage(r *storage.RuntimeStorage) {
 	s.runtimeStorage = r
 }
-
 
 func (s *Server) SetConfigPath(p string) {
 	s.cfgPath = p
@@ -93,7 +87,7 @@ func NewServer(cfg *config.Config, cameraMgr *camera.CameraManager, storageMgr *
 		storageMgr: storageMgr,
 		alertMgr:   alertMgr,
 		wsUpgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
+			CheckOrigin:     func(r *http.Request) bool { return true },
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 		},
@@ -112,10 +106,9 @@ func (s *Server) setupRoutes() {
 	r.Use(s.loggerMiddleware())
 	r.Use(s.corsMiddleware())
 
-
 	distFS, distErr := embedui.Dist()
 	if distErr != nil {
-		logrus.Warnf("加载内嵌前端资源失败（未执行前端构建？）: %v", distErr)
+		logrus.Warnf("failed to load embedded frontend assets (frontend build not run?): %v", distErr)
 	}
 	if distErr == nil {
 
@@ -135,10 +128,8 @@ func (s *Server) setupRoutes() {
 		}
 	}
 
-
 	r.GET("/health", s.healthCheck)
 	r.GET("/api/version", s.getVersion)
-
 
 	v1 := r.Group("/api/v1")
 	{
@@ -151,10 +142,8 @@ func (s *Server) setupRoutes() {
 			auth.PUT("/password", s.authMiddleware(), s.changePassword)
 		}
 
-
 		v1.GET("/setup/status", s.getSetupStatus)
 		v1.POST("/setup", s.postSetup)
-
 
 		secured := v1.Group("")
 		secured.Use(s.authMiddleware())
@@ -179,7 +168,6 @@ func (s *Server) setupRoutes() {
 				cameras.GET("/probe", s.probeONVIFCamera)
 			}
 
-
 			users := secured.Group("/users")
 			users.Use(s.adminOnly())
 			{
@@ -192,7 +180,6 @@ func (s *Server) setupRoutes() {
 				users.PUT("/:id/permissions", s.setUserPermissions)
 			}
 
-
 			settings := secured.Group("/settings")
 			{
 				settings.GET("/storage", s.getStorageSettings)
@@ -203,7 +190,6 @@ func (s *Server) setupRoutes() {
 				settings.POST("/minio/test", s.testMinio)
 			}
 
-
 			recordings := secured.Group("/recordings")
 			{
 				recordings.GET("", s.listRecordings)
@@ -213,14 +199,12 @@ func (s *Server) setupRoutes() {
 				recordings.GET("/camera/:cameraId/segments", s.getRecordingSegments)
 			}
 
-
 			snapshots := secured.Group("/snapshots")
 			{
 				snapshots.GET("", s.listAllSnapshots)
 				snapshots.DELETE("", s.clearSnapshots)
 				snapshots.DELETE("/:id", s.deleteSnapshot)
 			}
-
 
 			analytics := secured.Group("/analytics")
 			{
@@ -232,13 +216,11 @@ func (s *Server) setupRoutes() {
 				analytics.DELETE("/alerts/:id", s.deleteAlert)
 			}
 
-
 			storage := secured.Group("/storage")
 			{
 				storage.GET("/stats", s.getStorageStats)
 				storage.POST("/cleanup", s.triggerCleanup)
 			}
-
 
 			alerts := secured.Group("/alerts")
 			{
@@ -247,7 +229,6 @@ func (s *Server) setupRoutes() {
 				alerts.POST("/test", s.sendTestAlert)
 			}
 
-
 			system := secured.Group("/system")
 			{
 				system.GET("/config", s.getSystemConfig)
@@ -255,20 +236,16 @@ func (s *Server) setupRoutes() {
 				system.GET("/info", s.getSystemInfo)
 				system.POST("/restart", s.restartSystem)
 
-
 				system.GET("/env", s.getEnvCheck)
-
 
 				system.GET("/logs", s.getLogTail)
 				system.GET("/logs/files", s.getLogFiles)
 				system.POST("/logs/clear", s.clearLogs)
 
-
 				system.POST("/backup", s.createBackup)
 				system.GET("/backups", s.listBackups)
 				system.GET("/backups/:name/download", s.downloadBackup)
 				system.DELETE("/backups/:name", s.deleteBackup)
-
 
 				system.GET("/update/check", s.checkUpdate)
 				system.POST("/update", s.performUpdate)
@@ -276,7 +253,6 @@ func (s *Server) setupRoutes() {
 				system.PUT("/update/config", s.updateUpdateConfig)
 			}
 		}
-
 
 		media := v1.Group("")
 		media.Use(s.mediaAuthMiddleware())
@@ -286,14 +262,11 @@ func (s *Server) setupRoutes() {
 			media.HEAD("/recordings/:id/file", s.getRecordingFile)
 			media.GET("/recordings/:id/download", s.downloadRecording)
 
-
 			media.GET("/webdav/list", s.listWebdavFiles)
 			media.GET("/webdav/file", s.streamWebdavFile)
 
-
 			media.GET("/minio/list", s.listMinIOFiles)
 			media.GET("/minio/file", s.streamMinIOFile)
-
 
 			stream := media.Group("/stream")
 			{
@@ -307,10 +280,8 @@ func (s *Server) setupRoutes() {
 		}
 	}
 
-
 	r.GET("/ws", s.handleWebSocket)
 	r.GET("/api/v1/ws/camera/:cameraId", s.handleCameraWS)
-
 
 	r.NoRoute(func(c *gin.Context) {
 
@@ -334,7 +305,6 @@ func (s *Server) setupRoutes() {
 
 	s.router = r
 }
-
 
 func (s *Server) loggerMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -364,11 +334,9 @@ func (s *Server) corsMiddleware() gin.HandlerFunc {
 	}
 }
 
-
 var authSecret = []byte("surveillance-system-secret-change-in-production")
 
 const tokenTTL = 24 * time.Hour
-
 
 func makeToken(username, role string, ttl time.Duration) string {
 	expires := time.Now().Add(ttl).Unix()
@@ -380,33 +348,31 @@ func makeToken(username, role string, ttl time.Duration) string {
 	return payloadB64 + "." + sig
 }
 
-
 func parseToken(token string) (string, string, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 2 {
-		return "", "", fmt.Errorf("令牌格式错误")
+		return "", "", fmt.Errorf("invalid token format")
 	}
 	mac := hmac.New(sha256.New, authSecret)
 	mac.Write([]byte(parts[0]))
 	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	if subtle.ConstantTimeCompare([]byte(expected), []byte(parts[1])) != 1 {
-		return "", "", fmt.Errorf("令牌签名无效")
+		return "", "", fmt.Errorf("invalid token signature")
 	}
 	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return "", "", fmt.Errorf("令牌解码失败")
+		return "", "", fmt.Errorf("failed to decode token")
 	}
 	segs := strings.Split(string(payloadBytes), "|")
 	if len(segs) != 3 {
-		return "", "", fmt.Errorf("令牌内容错误")
+		return "", "", fmt.Errorf("invalid token content")
 	}
 	expires, err := strconv.ParseInt(segs[2], 10, 64)
 	if err != nil || time.Now().Unix() > expires {
-		return "", "", fmt.Errorf("令牌已过期")
+		return "", "", fmt.Errorf("token expired")
 	}
 	return segs[0], segs[1], nil
 }
-
 
 func randomBytes(n int) []byte {
 	b := make([]byte, n)
@@ -414,19 +380,18 @@ func randomBytes(n int) []byte {
 	return b
 }
 
-
 func (s *Server) authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenHeader := c.GetHeader("Authorization")
 		if tokenHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录或缺少认证令牌"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "not logged in or missing auth token"})
 			c.Abort()
 			return
 		}
 		tokenString := strings.TrimPrefix(tokenHeader, "Bearer ")
 		username, role, err := parseToken(tokenString)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "令牌无效或已过期，请重新登录"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token, please log in again"})
 			c.Abort()
 			return
 		}
@@ -435,7 +400,6 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
-
 
 func (s *Server) mediaAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -449,7 +413,7 @@ func (s *Server) mediaAuthMiddleware() gin.HandlerFunc {
 
 		username, role, err := parseToken(tokenString)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录或令牌无效，请重新登录"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "not logged in or invalid token, please log in again"})
 			c.Abort()
 			return
 		}
@@ -458,7 +422,6 @@ func (s *Server) mediaAuthMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
-
 
 func (s *Server) healthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
@@ -476,7 +439,6 @@ func (s *Server) getVersion(c *gin.Context) {
 	})
 }
 
-
 func (s *Server) login(c *gin.Context) {
 	var req struct {
 		Username string `json:"username" binding:"required"`
@@ -487,25 +449,23 @@ func (s *Server) login(c *gin.Context) {
 		return
 	}
 
-
 	var user models.User
 	if err := database.GetDB().Where("username = ?", req.Username).First(&user).Error; err != nil {
-		logrus.Warnf("登录失败：用户不存在 username=%s", req.Username)
+		logrus.Warnf("login failed: user does not exist username=%s", req.Username)
 
 		_ = bcrypt.CompareHashAndPassword([]byte("$2a$10$dummyhashdummyhashdummyhashdummyhas0000000000000000000000"), []byte(req.Password))
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 		return
 	}
 	if user.Status != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "账号已被禁用"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "account is disabled"})
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		logrus.Warnf("登录失败：密码错误 username=%s", req.Username)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
+		logrus.Warnf("login failed: wrong password username=%s", req.Username)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 		return
 	}
-
 
 	now := time.Now()
 	database.GetDB().Model(&user).Update("last_login", &now)
@@ -521,7 +481,7 @@ func (s *Server) login(c *gin.Context) {
 }
 
 func (s *Server) logout(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "登出成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "logged out successfully"})
 }
 
 func (s *Server) getCurrentUser(c *gin.Context) {
@@ -548,31 +508,30 @@ func (s *Server) changePassword(c *gin.Context) {
 
 	var user models.User
 	if err := database.GetDB().Where("username = ?", username).First(&user).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.OldPassword)); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "原密码错误"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "old password is incorrect"})
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
 		return
 	}
 	if err := database.GetDB().Model(&user).Update("password", string(hash)).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "密码修改成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "password changed successfully"})
 }
-
 
 func (s *Server) adminOnly() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, _ := c.Get("role")
 		if role != models.UserRoleAdmin {
-			c.JSON(http.StatusForbidden, gin.H{"error": "需要管理员权限"})
+			c.JSON(http.StatusForbidden, gin.H{"error": "admin role required"})
 			c.Abort()
 			return
 		}
@@ -610,7 +569,7 @@ func (s *Server) createUser(c *gin.Context) {
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
 		return
 	}
 	user := models.User{
@@ -622,7 +581,7 @@ func (s *Server) createUser(c *gin.Context) {
 		Status:   req.Status,
 	}
 	if err := database.GetDB().Create(&user).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "创建失败：用户名或邮箱已存在"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to create: username or email already exists"})
 		return
 	}
 	user.Password = ""
@@ -646,7 +605,7 @@ func (s *Server) updateUser(c *gin.Context) {
 
 	var target models.User
 	if err := database.GetDB().First(&target, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
 
@@ -664,7 +623,7 @@ func (s *Server) updateUser(c *gin.Context) {
 
 		if *req.Role != models.UserRoleAdmin && target.Role == models.UserRoleAdmin {
 			if me, _ := c.Get("username"); me == target.Username {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "不能取消自己的管理员角色"})
+				c.JSON(http.StatusBadRequest, gin.H{"error": "cannot remove your own admin role"})
 				return
 			}
 		}
@@ -673,7 +632,7 @@ func (s *Server) updateUser(c *gin.Context) {
 	if req.Status != nil && *req.Status != "" {
 		if target.Role == models.UserRoleAdmin && *req.Status != "active" {
 			if me, _ := c.Get("username"); me == target.Username {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "不能禁用自己的管理员账号"})
+				c.JSON(http.StatusBadRequest, gin.H{"error": "cannot disable your own admin account"})
 				return
 			}
 			var adminCount int64
@@ -681,7 +640,7 @@ func (s *Server) updateUser(c *gin.Context) {
 				Where("role = ? AND status = ?", models.UserRoleAdmin, "active").
 				Count(&adminCount)
 			if adminCount <= 1 {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "不能禁用最后一个管理员"})
+				c.JSON(http.StatusBadRequest, gin.H{"error": "cannot disable the last admin"})
 				return
 			}
 		}
@@ -690,24 +649,24 @@ func (s *Server) updateUser(c *gin.Context) {
 	if req.NewPassword != nil && *req.NewPassword != "" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(*req.NewPassword), bcrypt.DefaultCost)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
 			return
 		}
 		updates["password"] = string(hash)
 	}
 	if len(updates) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "没有需要更新的字段"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no fields to update"})
 		return
 	}
 	if res := database.GetDB().Model(&models.User{}).Where("id = ?", id).Updates(updates); res.Error != nil {
 		if strings.Contains(res.Error.Error(), "UNIQUE constraint") {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "更新失败：用户名或邮箱已存在"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "failed to update: username or email already exists"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": res.Error.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "updated successfully"})
 }
 
 func (s *Server) deleteUser(c *gin.Context) {
@@ -716,11 +675,11 @@ func (s *Server) deleteUser(c *gin.Context) {
 
 	var target models.User
 	if err := database.GetDB().First(&target, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
 	if target.Username == me {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "不能删除自己的账号"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot delete your own account"})
 		return
 	}
 	if target.Role == models.UserRoleAdmin {
@@ -729,7 +688,7 @@ func (s *Server) deleteUser(c *gin.Context) {
 			Where("role = ? AND status = ?", models.UserRoleAdmin, "active").
 			Count(&adminCount)
 		if adminCount <= 1 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "不能删除最后一个管理员"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot delete the last admin"})
 			return
 		}
 	}
@@ -737,7 +696,7 @@ func (s *Server) deleteUser(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "deleted successfully"})
 }
 
 func (s *Server) resetUserPassword(c *gin.Context) {
@@ -751,7 +710,7 @@ func (s *Server) resetUserPassword(c *gin.Context) {
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
 		return
 	}
 	res := database.GetDB().Model(&models.User{}).Where("id = ?", id).Update("password", string(hash))
@@ -760,10 +719,10 @@ func (s *Server) resetUserPassword(c *gin.Context) {
 		return
 	}
 	if res.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "密码重置成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "password reset successfully"})
 }
 
 func (s *Server) listUserPermissions(c *gin.Context) {
@@ -787,7 +746,7 @@ func (s *Server) setUserPermissions(c *gin.Context) {
 	}
 	var user models.User
 	if err := database.GetDB().First(&user, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
 
@@ -807,9 +766,8 @@ func (s *Server) setUserPermissions(c *gin.Context) {
 			return
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "权限已更新"})
+	c.JSON(http.StatusOK, gin.H{"message": "permissions updated"})
 }
-
 
 func (s *Server) listCameras(c *gin.Context) {
 	cameras, err := s.cameraMgr.ListCameras()
@@ -817,7 +775,6 @@ func (s *Server) listCameras(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 
 	previewDefault := s.cameraMgr.NormalizePreviewSrc("")
 	for i := range cameras {
@@ -832,34 +789,33 @@ func (s *Server) listCameras(c *gin.Context) {
 	})
 }
 
-
 type cameraRequest struct {
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	Protocol    string  `json:"protocol"`
-	IP          string  `json:"ip"`
-	Port        int     `json:"port"`
-	Username    string  `json:"username"`
-	Password    string  `json:"password"`
-	Path        string  `json:"path"`
-	OnvifAddress      string  `json:"onvif_address"`
-	OnvifProfileToken string  `json:"onvif_profile_token"`
+	Name              string `json:"name"`
+	Description       string `json:"description"`
+	Protocol          string `json:"protocol"`
+	IP                string `json:"ip"`
+	Port              int    `json:"port"`
+	Username          string `json:"username"`
+	Password          string `json:"password"`
+	Path              string `json:"path"`
+	OnvifAddress      string `json:"onvif_address"`
+	OnvifProfileToken string `json:"onvif_profile_token"`
 
-	Manufacturer  string `json:"manufacturer"`
-	Model         string `json:"model"`
-	Firmware      string `json:"firmware"`
-	SerialNumber  string `json:"serial_number"`
-	DeviceID    *string `json:"device_id"`
+	Manufacturer string  `json:"manufacturer"`
+	Model        string  `json:"model"`
+	Firmware     string  `json:"firmware"`
+	SerialNumber string  `json:"serial_number"`
+	DeviceID     *string `json:"device_id"`
 
-	RecordEnabled   *bool   `json:"record_enabled"`
-	RecordSchedule  string  `json:"record_schedule"`
-	RecordType      string  `json:"record_type"`
-	Width       int    `json:"width"`
-	Height      int    `json:"height"`
-	FPS         int    `json:"fps"`
-	Bitrate     int    `json:"bitrate"`
-	Codec       string `json:"codec"`
-	PTZEnabled  *bool  `json:"ptz_enabled"`
+	RecordEnabled  *bool  `json:"record_enabled"`
+	RecordSchedule string `json:"record_schedule"`
+	RecordType     string `json:"record_type"`
+	Width          int    `json:"width"`
+	Height         int    `json:"height"`
+	FPS            int    `json:"fps"`
+	Bitrate        int    `json:"bitrate"`
+	Codec          string `json:"codec"`
+	PTZEnabled     *bool  `json:"ptz_enabled"`
 }
 
 func (r *cameraRequest) toModel() *models.Camera {
@@ -872,30 +828,30 @@ func (r *cameraRequest) toModel() *models.Camera {
 		ptz = *r.PTZEnabled
 	}
 	return &models.Camera{
-		Name:                r.Name,
-		Description:         r.Description,
-		Protocol:            r.Protocol,
-		IP:                  r.IP,
-		Port:                r.Port,
-		Username:            r.Username,
-		Password:            r.Password,
-		Path:                r.Path,
-		OnvifAddress:        r.OnvifAddress,
-		OnvifProfileToken:   r.OnvifProfileToken,
-		Manufacturer:        r.Manufacturer,
-		Model:               r.Model,
-		Firmware:            r.Firmware,
-		SerialNumber:        r.SerialNumber,
-		DeviceID:            r.DeviceID,
-		RecordEnabled:       rec,
-		RecordSchedule:      r.RecordSchedule,
-		RecordType:          r.RecordType,
-		Width:               r.Width,
-		Height:              r.Height,
-		FPS:                 r.FPS,
-		Bitrate:             r.Bitrate,
-		Codec:               r.Codec,
-		PTZEnabled:          ptz,
+		Name:              r.Name,
+		Description:       r.Description,
+		Protocol:          r.Protocol,
+		IP:                r.IP,
+		Port:              r.Port,
+		Username:          r.Username,
+		Password:          r.Password,
+		Path:              r.Path,
+		OnvifAddress:      r.OnvifAddress,
+		OnvifProfileToken: r.OnvifProfileToken,
+		Manufacturer:      r.Manufacturer,
+		Model:             r.Model,
+		Firmware:          r.Firmware,
+		SerialNumber:      r.SerialNumber,
+		DeviceID:          r.DeviceID,
+		RecordEnabled:     rec,
+		RecordSchedule:    r.RecordSchedule,
+		RecordType:        r.RecordType,
+		Width:             r.Width,
+		Height:            r.Height,
+		FPS:               r.FPS,
+		Bitrate:           r.Bitrate,
+		Codec:             r.Codec,
+		PTZEnabled:        ptz,
 	}
 }
 
@@ -908,17 +864,14 @@ func (s *Server) createCamera(c *gin.Context) {
 
 	cam := req.toModel()
 
-
 	if cam.Protocol == "rtsp" && cam.RecordType == "motion" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "RTSP 摄像头不支持移动侦测录像（依赖 ONVIF 事件上报），请选择连续录像或定时录像"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "RTSP cameras do not support motion-detection recording (it relies on ONVIF event reporting); please choose continuous or scheduled recording"})
 		return
 	}
-
 
 	if cam.Protocol != "gb28181" && (cam.DeviceID == nil || *cam.DeviceID == "") {
 		cam.DeviceID = nil
 	}
-
 
 	if cam.Protocol == "rtsp" {
 		rtspURL := camera.BuildRTSPURL(cam)
@@ -938,15 +891,14 @@ func (s *Server) createCamera(c *gin.Context) {
 		output, err := cmd.Output()
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
-				"error": fmt.Sprintf("摄像头连接测试失败: %v，请检查 IP/端口/路径/账号密码是否正确", err),
+				"error": fmt.Sprintf("camera connection test failed: %v, please check the IP/port/path/credentials are correct", err),
 			})
 			return
 		}
 
-
 		var probeResult map[string]interface{}
 		if err := json.Unmarshal(output, &probeResult); err != nil || len(probeResult) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "摄像头连接测试失败: 无法解析视频流信息"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "camera connection test failed: unable to parse video stream information"})
 			return
 		}
 	}
@@ -964,7 +916,7 @@ func (s *Server) getCamera(c *gin.Context) {
 	id := c.Param("id")
 	cam, err := s.cameraMgr.GetCamera(parseUint(id))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "摄像头不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "camera not found"})
 		return
 	}
 	cam.Password = ""
@@ -982,10 +934,9 @@ func (s *Server) updateCamera(c *gin.Context) {
 	}
 	camID := parseUint(id)
 
-
 	existing, err := s.cameraMgr.GetCamera(camID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "摄像头不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "camera not found"})
 		return
 	}
 
@@ -996,7 +947,6 @@ func (s *Server) updateCamera(c *gin.Context) {
 	cam.Status = existing.Status
 	cam.LastOnline = existing.LastOnline
 	cam.ErrorMsg = existing.ErrorMsg
-
 
 	if cam.Name == "" {
 		cam.Name = existing.Name
@@ -1093,24 +1043,24 @@ func (s *Server) deleteCamera(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "deleted successfully"})
 }
 
 func (s *Server) getCameraStatus(c *gin.Context) {
 	id := c.Param("id")
 	inst, ok := s.cameraMgr.GetCameraStatus(parseUint(id))
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "摄像头不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "camera not found"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"camera_id":      inst.Model.ID,
-		"name":           inst.Model.Name,
-		"status":         inst.Status,
-		"last_error":     inst.LastError,
+		"camera_id":       inst.Model.ID,
+		"name":            inst.Model.Name,
+		"status":          inst.Status,
+		"last_error":      inst.LastError,
 		"reconnect_count": inst.ReconnectCnt,
-		"is_streaming":   inst.Stream != nil && inst.Stream.IsRunning(),
+		"is_streaming":    inst.Stream != nil && inst.Stream.IsRunning(),
 	})
 }
 
@@ -1118,7 +1068,7 @@ func (s *Server) startCamera(c *gin.Context) {
 	id := parseUint(c.Param("id"))
 	cam, err := s.cameraMgr.GetCamera(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "摄像头不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "camera not found"})
 		return
 	}
 	cam.RecordEnabled = true
@@ -1126,14 +1076,14 @@ func (s *Server) startCamera(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "启动成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "started successfully"})
 }
 
 func (s *Server) stopCamera(c *gin.Context) {
 	id := parseUint(c.Param("id"))
 	cam, err := s.cameraMgr.GetCamera(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "摄像头不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "camera not found"})
 		return
 	}
 	cam.RecordEnabled = false
@@ -1141,7 +1091,7 @@ func (s *Server) stopCamera(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "停止成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "stopped successfully"})
 }
 
 func (s *Server) restartCamera(c *gin.Context) {
@@ -1150,7 +1100,7 @@ func (s *Server) restartCamera(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "重启成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "restarted successfully"})
 }
 
 func (s *Server) takeSnapshot(c *gin.Context) {
@@ -1162,14 +1112,12 @@ func (s *Server) takeSnapshot(c *gin.Context) {
 		return
 	}
 
-
 	if err := s.cameraMgr.SaveSnapshot(id, path, "manual"); err != nil {
-		logrus.Warnf("保存抓拍记录失败: %v", err)
+		logrus.Warnf("failed to save snapshot record: %v", err)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"path": path})
 }
-
 
 func (s *Server) getSnapshotFile(c *gin.Context) {
 	cameraID := c.Param("cameraId")
@@ -1184,13 +1132,12 @@ func (s *Server) getSnapshotFile(c *gin.Context) {
 	c.File("./recordings/camera_" + cameraID + "/" + file)
 }
 
-
 type storageSettingsRequest struct {
-	RootPath        string `json:"root_path"`
-	SegmentDuration int    `json:"segment_duration"`
-	MaxDays         int    `json:"max_days"`
-	MaxStorageGB    *float64 `json:"max_storage_gb"`
-	CleanupInterval int    `json:"cleanup_interval"`
+	RootPath        string               `json:"root_path"`
+	SegmentDuration int                  `json:"segment_duration"`
+	MaxDays         int                  `json:"max_days"`
+	MaxStorageGB    *float64             `json:"max_storage_gb"`
+	CleanupInterval int                  `json:"cleanup_interval"`
 	Webdav          *config.WebdavConfig `json:"webdav"`
 	MinIO           *config.MinIOConfig  `json:"minio"`
 }
@@ -1203,12 +1150,12 @@ type webdavTestRequest struct {
 }
 
 type minioTestRequest struct {
-	Endpoint   string `json:"endpoint"`
-	AccessKey  string `json:"access_key"`
-	SecretKey  string `json:"secret_key"`
-	Bucket     string `json:"bucket"`
-	UseSSL     bool   `json:"use_ssl"`
-	BasePath   string `json:"base_path"`
+	Endpoint  string `json:"endpoint"`
+	AccessKey string `json:"access_key"`
+	SecretKey string `json:"secret_key"`
+	Bucket    string `json:"bucket"`
+	UseSSL    bool   `json:"use_ssl"`
+	BasePath  string `json:"base_path"`
 }
 
 func (s *Server) currentStorageSettings() config.LocalStorageConfig {
@@ -1231,7 +1178,6 @@ func (s *Server) currentMinIOSettings() config.MinIOConfig {
 	}
 	return s.cfg.Storage.MinIO
 }
-
 
 func (s *Server) listWebdavFiles(c *gin.Context) {
 	wd := s.currentWebdavSettings()
@@ -1258,7 +1204,7 @@ func (s *Server) listWebdavFiles(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"enabled": true, "camera_id": cameraID, "files": []interface{}{}})
 			return
 		}
-		c.JSON(http.StatusBadGateway, gin.H{"error": "读取 WebDAV 目录失败: " + err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to read WebDAV directory: " + err.Error()})
 		return
 	}
 
@@ -1291,20 +1237,18 @@ func (s *Server) listWebdavFiles(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"enabled": true, "camera_id": cameraID, "files": files})
 }
 
-
 func isMinioNoSuchKey(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "NoSuchKey")
 }
 
-
 func validateWebdavRelPath(basePath, rel string) error {
 	rel = strings.TrimSpace(rel)
 	if rel == "" {
-		return fmt.Errorf("路径不能为空")
+		return fmt.Errorf("path must not be empty")
 	}
 	for _, seg := range strings.Split(rel, "/") {
 		if seg == ".." {
-			return fmt.Errorf("非法路径")
+			return fmt.Errorf("invalid path")
 		}
 	}
 	base := strings.Trim(strings.TrimSpace(basePath), "/")
@@ -1312,16 +1256,15 @@ func validateWebdavRelPath(basePath, rel string) error {
 		return nil
 	}
 	if rel != base && !strings.HasPrefix(rel, base+"/") {
-		return fmt.Errorf("路径必须在 WebDAV 基础目录内")
+		return fmt.Errorf("path must be within the WebDAV base directory")
 	}
 	return nil
 }
 
-
 func (s *Server) streamWebdavFile(c *gin.Context) {
 	wd := s.currentWebdavSettings()
 	if !wd.Enabled || wd.URL == "" {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "WebDAV 未启用"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "WebDAV is not enabled"})
 		return
 	}
 	rel := c.Query("path")
@@ -1333,13 +1276,13 @@ func (s *Server) streamWebdavFile(c *gin.Context) {
 	client := webdav.NewClient(wd.URL, wd.Username, wd.Password)
 	resp, err := client.Get(c.Request.Context(), rel, c.GetHeader("Range"))
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "读取 WebDAV 文件失败: " + err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to read WebDAV file: " + err.Error()})
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		c.JSON(http.StatusNotFound, gin.H{"error": "WebDAV 上不存在该文件"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "file does not exist on WebDAV"})
 		return
 	}
 	c.Status(resp.StatusCode)
@@ -1388,7 +1331,7 @@ func (s *Server) getStorageSettings(c *gin.Context) {
 func (s *Server) updateStorageSettings(c *gin.Context) {
 	var req storageSettingsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效: " + err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request parameters: " + err.Error()})
 		return
 	}
 
@@ -1396,10 +1339,9 @@ func (s *Server) updateStorageSettings(c *gin.Context) {
 	wd := s.currentWebdavSettings()
 	mio := s.currentMinIOSettings()
 
-
 	if req.RootPath != "" {
 		if strings.Contains(req.RootPath, "..") {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "存储路径不合法"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid storage path"})
 			return
 		}
 		loc.RootPath = req.RootPath
@@ -1412,7 +1354,7 @@ func (s *Server) updateStorageSettings(c *gin.Context) {
 	}
 	if req.MaxStorageGB != nil {
 		if *req.MaxStorageGB < 0 || *req.MaxStorageGB > 100000 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "存储占用上限须在 0~100000 GB 之间（0 表示不限制）"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "max storage usage must be between 0 and 100000 GB (0 means unlimited)"})
 			return
 		}
 		loc.MaxStorageGB = *req.MaxStorageGB
@@ -1420,7 +1362,6 @@ func (s *Server) updateStorageSettings(c *gin.Context) {
 	if req.CleanupInterval >= 300 {
 		loc.CleanupInterval = req.CleanupInterval
 	}
-
 
 	if req.Webdav != nil {
 		w := *req.Webdav
@@ -1430,16 +1371,15 @@ func (s *Server) updateStorageSettings(c *gin.Context) {
 		}
 
 		if w.MaxDays < 0 || w.MaxDays > 3650 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "WebDAV 远程保留天数须在 0~3650 之间（0 表示不按时间自动删除）"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "WebDAV remote retention days must be between 0 and 3650 (0 means no time-based auto deletion)"})
 			return
 		}
 		if w.MaxStorageGB < 0 || w.MaxStorageGB > 100000 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "WebDAV 远程占用上限须在 0~100000 GB 之间（0 表示不限制）"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "WebDAV remote max usage must be between 0 and 100000 GB (0 means unlimited)"})
 			return
 		}
 		wd = w
 	}
-
 
 	if req.MinIO != nil {
 		mn := *req.MinIO
@@ -1452,16 +1392,15 @@ func (s *Server) updateStorageSettings(c *gin.Context) {
 		mn.Endpoint = strings.Trim(mn.Endpoint, "/")
 
 		if mn.MaxDays < 0 || mn.MaxDays > 3650 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "MinIO 远程保留天数须在 0~3650 之间（0 表示不按时间自动删除）"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "MinIO remote retention days must be between 0 and 3650 (0 means no time-based auto deletion)"})
 			return
 		}
 		if mn.MaxStorageGB < 0 || mn.MaxStorageGB > 100000 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "MinIO 远程占用上限须在 0~100000 GB 之间（0 表示不限制）"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "MinIO remote max usage must be between 0 and 100000 GB (0 means unlimited)"})
 			return
 		}
 		mio = mn
 	}
-
 
 	if s.runtimeStorage != nil {
 		s.runtimeStorage.SetLocal(loc)
@@ -1473,20 +1412,18 @@ func (s *Server) updateStorageSettings(c *gin.Context) {
 	s.cfg.Storage.MinIO = mio
 
 	if err := s.persistConfig(); err != nil {
-		logrus.Warnf("持久化设置到 config.yaml 失败: %v（本次修改仅在内存生效，重启后还原）", err)
+		logrus.Warnf("failed to persist settings to config.yaml: %v (this change is only in effect in memory and will be reverted after restart)", err)
 	}
-
 
 	if err := os.MkdirAll(loc.RootPath, 0755); err != nil {
-		logrus.Warnf("创建存储根目录失败 %s: %v", loc.RootPath, err)
+		logrus.Warnf("failed to create storage root directory %s: %v", loc.RootPath, err)
 	}
 
-	logrus.Infof("存储设置已更新: root=%s segment=%ds maxdays=%d maxstorage=%vGB webdav.enabled=%v",
+	logrus.Infof("storage settings updated: root=%s segment=%ds maxdays=%d maxstorage=%vGB webdav.enabled=%v",
 		loc.RootPath, loc.SegmentDuration, loc.MaxDays, loc.MaxStorageGB, wd.Enabled)
 
-	c.JSON(http.StatusOK, gin.H{"message": "保存成功（分段时长对新连接/重连的摄像头生效）"})
+	c.JSON(http.StatusOK, gin.H{"message": "saved successfully (segment duration takes effect for new connections/reconnections)"})
 }
-
 
 func (s *Server) getCameraSettings(c *gin.Context) {
 	enabled, interval := s.cameraMgr.GetSnapshotSettings()
@@ -1498,14 +1435,13 @@ func (s *Server) getCameraSettings(c *gin.Context) {
 	})
 }
 
-
 func (s *Server) updateCameraSettings(c *gin.Context) {
 	var req struct {
 		SnapshotEnabled  *bool `json:"snapshot_enabled"`
 		SnapshotInterval *int  `json:"snapshot_interval"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效: " + err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request parameters: " + err.Error()})
 		return
 	}
 
@@ -1515,28 +1451,27 @@ func (s *Server) updateCameraSettings(c *gin.Context) {
 	}
 	if req.SnapshotInterval != nil {
 		if *req.SnapshotInterval < 30 || *req.SnapshotInterval > 86400 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "抓拍间隔须在 30~86400 秒之间"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "snapshot interval must be between 30 and 86400 seconds"})
 			return
 		}
 		interval = *req.SnapshotInterval
 	}
 
-
 	s.cameraMgr.SetSnapshotSettings(enabled, interval)
 	s.cfg.Camera.SnapshotEnabled = enabled
 	s.cfg.Camera.SnapshotInterval = interval
 	if err := s.persistConfig(); err != nil {
-		logrus.Warnf("持久化设置到 config.yaml 失败: %v（本次修改仅在内存生效，重启后还原）", err)
+		logrus.Warnf("failed to persist settings to config.yaml: %v (this change is only in effect in memory and will be reverted after restart)", err)
 	}
 
-	logrus.Infof("定时抓拍设置已更新: enabled=%v interval=%ds", enabled, interval)
-	c.JSON(http.StatusOK, gin.H{"message": "保存成功（定时抓拍立即生效）"})
+	logrus.Infof("scheduled snapshot settings updated: enabled=%v interval=%ds", enabled, interval)
+	c.JSON(http.StatusOK, gin.H{"message": "saved successfully (scheduled snapshots take effect immediately)"})
 }
 
 func (s *Server) testWebdav(c *gin.Context) {
 	var req webdavTestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request parameters"})
 		return
 	}
 	client := webdav.NewClient(req.URL, req.Username, req.Password)
@@ -1544,19 +1479,19 @@ func (s *Server) testWebdav(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "message": "WebDAV 连接成功，可正常读写"})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "message": "WebDAV connection successful, read and write work normally"})
 }
 
 func (s *Server) testMinio(c *gin.Context) {
 	var req minioTestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request parameters"})
 		return
 	}
 	endpoint := strings.TrimPrefix(strings.TrimPrefix(req.Endpoint, "http://"), "https://")
 	endpoint = strings.Trim(endpoint, "/")
 	if endpoint == "" || req.Bucket == "" {
-		c.JSON(http.StatusOK, gin.H{"ok": false, "error": "Endpoint 与 Bucket 不能为空"})
+		c.JSON(http.StatusOK, gin.H{"ok": false, "error": "endpoint and bucket must not be empty"})
 		return
 	}
 	client, err := minio.NewClient(endpoint, req.AccessKey, req.SecretKey, req.Bucket, req.UseSSL)
@@ -1568,9 +1503,8 @@ func (s *Server) testMinio(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "message": "MinIO 连接成功，bucket 可正常读写"})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "message": "MinIO connection successful, bucket is readable and writable"})
 }
-
 
 func (s *Server) listMinIOFiles(c *gin.Context) {
 	mn := s.currentMinIOSettings()
@@ -1594,12 +1528,12 @@ func (s *Server) listMinIOFiles(c *gin.Context) {
 
 	client, err := minio.NewClient(mn.Endpoint, mn.AccessKey, mn.SecretKey, mn.Bucket, mn.UseSSL)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "创建 MinIO 客户端失败: " + err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to create MinIO client: " + err.Error()})
 		return
 	}
 	entries, err := client.List(prefix)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "读取 MinIO 对象失败: " + err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to list MinIO objects: " + err.Error()})
 		return
 	}
 
@@ -1628,11 +1562,10 @@ func (s *Server) listMinIOFiles(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"enabled": true, "camera_id": cameraID, "files": files})
 }
 
-
 func (s *Server) streamMinIOFile(c *gin.Context) {
 	mn := s.currentMinIOSettings()
 	if !mn.Enabled || mn.Endpoint == "" || mn.Bucket == "" {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "MinIO 未启用"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "MinIO is not enabled"})
 		return
 	}
 	key := c.Query("path")
@@ -1643,16 +1576,16 @@ func (s *Server) streamMinIOFile(c *gin.Context) {
 
 	client, err := minio.NewClient(mn.Endpoint, mn.AccessKey, mn.SecretKey, mn.Bucket, mn.UseSSL)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "创建 MinIO 客户端失败: " + err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to create MinIO client: " + err.Error()})
 		return
 	}
 	res, err := client.Get(c.Request.Context(), key, c.GetHeader("Range"))
 	if err != nil {
 		if isMinioNoSuchKey(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "MinIO 上不存在该文件"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "file does not exist on MinIO"})
 			return
 		}
-		c.JSON(http.StatusBadGateway, gin.H{"error": "读取 MinIO 文件失败: " + err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to read MinIO file: " + err.Error()})
 		return
 	}
 	defer res.Body.Close()
@@ -1669,10 +1602,9 @@ func (s *Server) streamMinIOFile(c *gin.Context) {
 	io.Copy(c.Writer, res.Body)
 }
 
-
 func (s *Server) persistConfig() error {
 	if s.cfgPath == "" {
-		return fmt.Errorf("未配置 config 路径")
+		return fmt.Errorf("config path not configured")
 	}
 	data, err := yaml.Marshal(s.cfg)
 	if err != nil {
@@ -1706,12 +1638,12 @@ func (s *Server) ptzControl(c *gin.Context) {
 		case errors.Is(err, camera.ErrCameraOffline):
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		default:
-			c.JSON(http.StatusBadGateway, gin.H{"error": "PTZ 控制失败: " + err.Error()})
+			c.JSON(http.StatusBadGateway, gin.H{"error": "PTZ control failed: " + err.Error()})
 		}
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "PTZ 指令已发送"})
+	c.JSON(http.StatusOK, gin.H{"message": "PTZ command sent"})
 }
 
 func (s *Server) listSnapshots(c *gin.Context) {
@@ -1729,7 +1661,6 @@ func (s *Server) listSnapshots(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"data": snaps, "total": total})
 }
-
 
 func (s *Server) listAllSnapshots(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -1769,7 +1700,6 @@ func (s *Server) listAllSnapshots(c *gin.Context) {
 		return
 	}
 
-
 	type snapshotListItem struct {
 		models.Snapshot
 		CameraName string `json:"camera_name"`
@@ -1782,12 +1712,11 @@ func (s *Server) listAllSnapshots(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": items, "total": total})
 }
 
-
 func (s *Server) deleteSnapshot(c *gin.Context) {
 	id := parseUint(c.Param("id"))
 	var snap models.Snapshot
 	if err := database.GetDB().First(&snap, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "抓拍图片不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "snapshot not found"})
 		return
 	}
 	if err := database.GetDB().Delete(&models.Snapshot{}, id).Error; err != nil {
@@ -1799,11 +1728,10 @@ func (s *Server) deleteSnapshot(c *gin.Context) {
 		full = "./" + full
 	}
 	if err := os.Remove(full); err != nil && !os.IsNotExist(err) {
-		logrus.Warnf("删除抓拍文件失败 %s: %v", full, err)
+		logrus.Warnf("failed to delete snapshot file %s: %v", full, err)
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
-
 
 func (s *Server) clearSnapshots(c *gin.Context) {
 	var snaps []models.Snapshot
@@ -1820,15 +1748,15 @@ func (s *Server) clearSnapshots(c *gin.Context) {
 		if err := os.Remove(full); err == nil {
 			deleted++
 		} else if !os.IsNotExist(err) {
-			logrus.Warnf("删除抓拍文件失败 %s: %v", full, err)
+			logrus.Warnf("failed to delete snapshot file %s: %v", full, err)
 		}
 	}
 	if err := database.GetDB().Unscoped().Where("id > 0").Delete(&models.Snapshot{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	logrus.Infof("已清空全部抓拍：记录 %d 条，删除文件 %d 个", len(snaps), deleted)
-	c.JSON(http.StatusOK, gin.H{"message": "已清空抓拍图片", "deleted": len(snaps)})
+	logrus.Infof("all snapshots cleared: %d records, %d files deleted", len(snaps), deleted)
+	c.JSON(http.StatusOK, gin.H{"message": "snapshots cleared", "deleted": len(snaps)})
 }
 
 func (s *Server) discoverCameras(c *gin.Context) {
@@ -1840,7 +1768,6 @@ func (s *Server) discoverCameras(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"data": devices})
 }
-
 
 func (s *Server) discoverLAN(c *gin.Context) {
 	var req struct {
@@ -1865,14 +1792,12 @@ func (s *Server) discoverLAN(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": devices})
 }
 
-
 func (s *Server) probeONVIFCamera(c *gin.Context) {
 	ip := c.Query("ip")
 	if ip == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 ip 参数"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing ip parameter"})
 		return
 	}
-
 
 	username := c.Query("username")
 	password := c.Query("password")
@@ -1880,14 +1805,13 @@ func (s *Server) probeONVIFCamera(c *gin.Context) {
 	device, err := s.cameraMgr.ProbeONVIFCamera(ip, username, password)
 	if err != nil {
 
-		authRequired := strings.Contains(err.Error(), "需要认证")
+		authRequired := strings.Contains(err.Error(), "authentication is required")
 		c.JSON(http.StatusOK, gin.H{"device": nil, "auth_required": authRequired, "error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"device": device, "auth_required": false, "error": ""})
 }
-
 
 func parseTimeParam(v string) (time.Time, bool) {
 	if v == "" {
@@ -1900,7 +1824,6 @@ func parseTimeParam(v string) (time.Time, bool) {
 	}
 	return time.Time{}, false
 }
-
 
 func (s *Server) listRecordings(c *gin.Context) {
 	cameraID, _ := strconv.ParseUint(c.Query("camera_id"), 10, 32)
@@ -1920,7 +1843,7 @@ func (s *Server) getRecording(c *gin.Context) {
 	id := parseUint(c.Param("id"))
 	rec, err := storage.NewRecordingManager().GetRecordingByID(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "录像不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "recording not found"})
 		return
 	}
 	c.JSON(http.StatusOK, rec)
@@ -1930,7 +1853,7 @@ func (s *Server) downloadRecording(c *gin.Context) {
 	id := parseUint(c.Param("id"))
 	rec, err := storage.NewRecordingManager().GetRecordingByID(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "录像不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "recording not found"})
 		return
 	}
 	full := rec.FilePath
@@ -1938,18 +1861,17 @@ func (s *Server) downloadRecording(c *gin.Context) {
 		full = "./" + full
 	}
 	if _, err := os.Stat(full); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "录像文件不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "recording file does not exist"})
 		return
 	}
 	c.FileAttachment(full, filepath.Base(full))
 }
 
-
 func (s *Server) getRecordingFile(c *gin.Context) {
 	id := parseUint(c.Param("id"))
 	rec, err := storage.NewRecordingManager().GetRecordingByID(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "录像不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "recording not found"})
 		return
 	}
 	full := rec.FilePath
@@ -1962,7 +1884,6 @@ func (s *Server) getRecordingFile(c *gin.Context) {
 		c.File(full)
 		return
 	}
-
 
 	if rec.StoragePath != "" {
 		if wd := s.currentWebdavSettings(); wd.Enabled && wd.URL != "" {
@@ -1989,15 +1910,14 @@ func (s *Server) getRecordingFile(c *gin.Context) {
 						return
 					}
 					if resp.StatusCode != http.StatusNotFound {
-						c.JSON(http.StatusBadGateway, gin.H{"error": "WebDAV 读取录像失败"})
+						c.JSON(http.StatusBadGateway, gin.H{"error": "failed to read recording from WebDAV"})
 						return
 					}
 				} else {
-					logrus.Warnf("WebDAV 回退播放失败 id=%d: %v", id, gerr)
+					logrus.Warnf("WebDAV fallback playback failed id=%d: %v", id, gerr)
 				}
 			}
 		}
-
 
 		if mn := s.currentMinIOSettings(); mn.Enabled && mn.Endpoint != "" && mn.Bucket != "" {
 			if err := validateWebdavRelPath(mn.BasePath, rec.StoragePath); err == nil {
@@ -2019,17 +1939,17 @@ func (s *Server) getRecordingFile(c *gin.Context) {
 						return
 					}
 					if !isMinioNoSuchKey(gerr) {
-						c.JSON(http.StatusBadGateway, gin.H{"error": "MinIO 读取录像失败"})
+						c.JSON(http.StatusBadGateway, gin.H{"error": "failed to read recording from MinIO"})
 						return
 					}
 				} else {
-					logrus.Warnf("MinIO 回退播放失败 id=%d: %v", id, merr)
+					logrus.Warnf("MinIO fallback playback failed id=%d: %v", id, merr)
 				}
 			}
 		}
 	}
 
-	c.JSON(http.StatusNotFound, gin.H{"error": "录像文件不存在"})
+	c.JSON(http.StatusNotFound, gin.H{"error": "recording file does not exist"})
 }
 
 func (s *Server) deleteRecording(c *gin.Context) {
@@ -2037,25 +1957,23 @@ func (s *Server) deleteRecording(c *gin.Context) {
 	rm := storage.NewRecordingManager()
 	rec, err := rm.GetRecordingByID(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "录像不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "recording not found"})
 		return
 	}
-
 
 	full := rec.FilePath
 	if !filepath.IsAbs(full) {
 		full = "./" + full
 	}
 	if err := os.Remove(full); err != nil && !os.IsNotExist(err) {
-		logrus.Warnf("删除录像文件失败 %s: %v", full, err)
+		logrus.Warnf("failed to delete recording file %s: %v", full, err)
 	}
-
 
 	if rec.StoragePath != "" {
 		if wd := s.runtimeStorage.GetWebdav(); wd.Enabled && wd.URL != "" {
 			remotePath := filepath.Join(wd.BasePath, rec.StoragePath)
 			if err := webdav.NewClient(wd.URL, wd.Username, wd.Password).Delete(remotePath); err == nil {
-				logrus.Infof("已删除 WebDAV 远程录像: %s", remotePath)
+				logrus.Infof("deleted WebDAV remote recording: %s", remotePath)
 			}
 		}
 	}
@@ -2064,16 +1982,14 @@ func (s *Server) deleteRecording(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "deleted successfully"})
 }
-
 
 func (s *Server) listCameraRecordings(c *gin.Context) {
 	cameraID := parseUint(c.Param("cameraId"))
 	recordType := c.Query("record_type")
 	start, _ := parseTimeParam(c.Query("start"))
 	end, _ := parseTimeParam(c.Query("end"))
-
 
 	page, _ := strconv.Atoi(c.Query("page"))
 	pageSize, _ := strconv.Atoi(c.Query("page_size"))
@@ -2092,7 +2008,6 @@ func (s *Server) listCameraRecordings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": recs, "total": total})
 }
 
-
 func (s *Server) getRecordingSegments(c *gin.Context) {
 	cameraID := parseUint(c.Param("cameraId"))
 	start, _ := parseTimeParam(c.Query("start"))
@@ -2106,18 +2021,15 @@ func (s *Server) getRecordingSegments(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": recs})
 }
 
-
 func (s *Server) getHLSPlaylist(c *gin.Context) {
 	cameraID := c.Param("cameraId")
 
-
 	stream := c.Query("stream")
 	if err := s.cameraMgr.EnsurePreview(parseUint(cameraID), stream); err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "预览流启动失败: " + err.Error()})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "failed to start preview stream: " + err.Error()})
 		return
 	}
 	file := "./recordings/camera_" + cameraID + "/index.m3u8"
-
 
 	deadline := time.Now().Add(15 * time.Second)
 	for {
@@ -2125,7 +2037,7 @@ func (s *Server) getHLSPlaylist(c *gin.Context) {
 			break
 		}
 		if time.Now().After(deadline) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "播放列表不存在，预览流启动超时"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "playlist does not exist, preview stream start timed out"})
 			return
 		}
 		time.Sleep(200 * time.Millisecond)
@@ -2133,10 +2045,9 @@ func (s *Server) getHLSPlaylist(c *gin.Context) {
 
 	data, err := os.ReadFile(file)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "播放列表不存在，预览流可能未就绪"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "playlist does not exist, preview stream may not be ready"})
 		return
 	}
-
 
 	token := c.Query("token")
 	if token == "" {
@@ -2148,7 +2059,6 @@ func (s *Server) getHLSPlaylist(c *gin.Context) {
 	if token != "" {
 		tokenSuffix = "?token=" + url.QueryEscape(token)
 	}
-
 
 	lines := strings.Split(string(data), "\n")
 	for i, line := range lines {
@@ -2189,7 +2099,7 @@ func (s *Server) getLatestSnapshot(c *gin.Context) {
 
 	matches, _ := filepath.Glob("./recordings/camera_" + cameraID + "/snapshot_*.jpg")
 	if len(matches) == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "暂无快照"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "no snapshots available"})
 		return
 	}
 
@@ -2204,7 +2114,6 @@ func (s *Server) getRecordingHLS(c *gin.Context) {
 	c.String(http.StatusOK, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXT-X-ENDLIST\n")
 }
 
-
 func (s *Server) listAlerts(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -2216,7 +2125,6 @@ func (s *Server) listAlerts(c *gin.Context) {
 	}
 
 	query := database.GetDB().Model(&models.Alert{})
-
 
 	if v := c.Query("camera_id"); v != "" {
 		if id, err := strconv.ParseUint(v, 10, 64); err == nil {
@@ -2255,25 +2163,32 @@ func (s *Server) listAlerts(c *gin.Context) {
 	if alerts == nil {
 		alerts = []models.Alert{}
 	}
+	al := LocaleFromContext(c)
+	for i := range alerts {
+		alerts[i].Message = LocalizeAlert(al, alerts[i].Message)
+	}
 
 	c.JSON(http.StatusOK, gin.H{"data": alerts, "total": total})
 }
 
 func (s *Server) getAlert(c *gin.Context) {
+	l := LocaleFromContext(c)
 	id := parseUint(c.Param("id"))
 	var alert models.Alert
 	if err := database.GetDB().First(&alert, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "报警记录不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": TEnv(l, "alert.notfound")})
 		return
 	}
+	alert.Message = LocalizeAlert(l, alert.Message)
 	c.JSON(http.StatusOK, alert)
 }
 
 func (s *Server) acknowledgeAlert(c *gin.Context) {
+	l := LocaleFromContext(c)
 	id := parseUint(c.Param("id"))
 	var alert models.Alert
 	if err := database.GetDB().First(&alert, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "报警记录不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": TEnv(l, "alert.notfound")})
 		return
 	}
 	now := time.Now()
@@ -2290,14 +2205,15 @@ func (s *Server) acknowledgeAlert(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已确认"})
+	c.JSON(http.StatusOK, gin.H{"message": TEnv(l, "alert.acked")})
 }
 
 func (s *Server) resolveAlert(c *gin.Context) {
+	l := LocaleFromContext(c)
 	id := parseUint(c.Param("id"))
 	var alert models.Alert
 	if err := database.GetDB().First(&alert, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "报警记录不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": TEnv(l, "alert.notfound")})
 		return
 	}
 	now := time.Now()
@@ -2309,28 +2225,28 @@ func (s *Server) resolveAlert(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已解决"})
+	c.JSON(http.StatusOK, gin.H{"message": TEnv(l, "alert.resolved")})
 }
 
 func (s *Server) deleteAlert(c *gin.Context) {
+	l := LocaleFromContext(c)
 	id := parseUint(c.Param("id"))
 	if err := database.GetDB().Delete(&models.Alert{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusOK, gin.H{"message": TEnv(l, "alert.deleted")})
 }
 
-
 func (s *Server) clearAlerts(c *gin.Context) {
+	l := LocaleFromContext(c)
 	result := database.GetDB().Unscoped().Where("id > 0").Delete(&models.Alert{})
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已清空报警记录", "deleted": result.RowsAffected})
+	c.JSON(http.StatusOK, gin.H{"message": TEnv(l, "alert.cleared"), "deleted": result.RowsAffected})
 }
-
 
 func (s *Server) getStorageStats(c *gin.Context) {
 	stats := s.storageMgr.GetStats()
@@ -2340,16 +2256,14 @@ func (s *Server) getStorageStats(c *gin.Context) {
 func (s *Server) triggerCleanup(c *gin.Context) {
 
 	s.storageMgr.TriggerCleanup()
-	c.JSON(http.StatusOK, gin.H{"message": "清理完成（已按保留天数与存储占用上限检查）"})
+	c.JSON(http.StatusOK, gin.H{"message": "cleanup completed (checked by retention days and max storage usage)"})
 }
-
 
 func (s *Server) getAlertConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, s.cfg.Alert)
 }
 
 func (s *Server) updateAlertConfig(c *gin.Context) {
-
 
 	var req struct {
 		Enabled  *bool `json:"enabled"`
@@ -2379,19 +2293,17 @@ func (s *Server) updateAlertConfig(c *gin.Context) {
 		}
 	}
 
-
 	if err := s.persistConfig(); err != nil {
-		logrus.Warnf("持久化报警配置失败: %v（本次修改仅在内存生效，重启后还原）", err)
+		logrus.Warnf("failed to persist alert config: %v (this change is only in effect in memory and will be reverted after restart)", err)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "报警配置已更新"})
+	c.JSON(http.StatusOK, gin.H{"message": "alert config updated"})
 }
 
 func (s *Server) sendTestAlert(c *gin.Context) {
 
-
 	var req struct {
-		Channel string `json:"channel" binding:"required"`
+		Channel string                     `json:"channel" binding:"required"`
 		Webhook *config.WebhookAlertConfig `json:"webhook"`
 		Email   *config.EmailAlertConfig   `json:"email"`
 		SMS     *config.SMSAlertConfig     `json:"sms"`
@@ -2421,9 +2333,8 @@ func (s *Server) sendTestAlert(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "测试报警已发送"})
+	c.JSON(http.StatusOK, gin.H{"message": "test alert sent"})
 }
-
 
 func (s *Server) getSystemConfig(c *gin.Context) {
 
@@ -2436,7 +2347,7 @@ func (s *Server) getSystemConfig(c *gin.Context) {
 
 func (s *Server) updateSystemConfig(c *gin.Context) {
 
-	c.JSON(http.StatusOK, gin.H{"message": "配置已更新"})
+	c.JSON(http.StatusOK, gin.H{"message": "config updated"})
 }
 
 func (s *Server) getSystemInfo(c *gin.Context) {
@@ -2459,13 +2370,11 @@ func (s *Server) getSystemInfo(c *gin.Context) {
 		}
 	}
 
-
 	diskPath := s.cfg.Storage.Local.RootPath
 	if diskPath == "" {
 		diskPath = "."
 	}
 	diskTotalMB, diskUsedMB := diskUsageMB(diskPath)
-
 
 	var dbSize int64
 	if p := s.cfg.Database.SQLite.Path; p != "" {
@@ -2474,13 +2383,11 @@ func (s *Server) getSystemInfo(c *gin.Context) {
 		}
 	}
 
-
 	var cameraCount, recordingCount int64
 	if db := database.GetDB(); db != nil {
 		db.Model(&models.Camera{}).Count(&cameraCount)
 		db.Model(&models.Recording{}).Count(&recordingCount)
 	}
-
 
 	var logSize int64
 	if p := s.logFilePath(); p != "" {
@@ -2515,18 +2422,17 @@ func (s *Server) getSystemInfo(c *gin.Context) {
 
 func (s *Server) restartSystem(c *gin.Context) {
 	if s.restartFunc == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "当前构建不支持在线重启"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "this build does not support online restart"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "系统重启中..."})
+	c.JSON(http.StatusOK, gin.H{"message": "restarting system..."})
 	go func() {
 		time.Sleep(300 * time.Millisecond)
 		if err := s.restartFunc(""); err != nil {
-			logrus.Errorf("原地重启失败: %v", err)
+			logrus.Errorf("in-place restart failed: %v", err)
 		}
 	}()
 }
-
 
 func (s *Server) logFilePath() string {
 	p := s.cfg.Logging.Output
@@ -2541,11 +2447,10 @@ func (s *Server) logFilePath() string {
 	return p
 }
 
-
 func (s *Server) getLogTail(c *gin.Context) {
 	path := s.logFilePath()
 	if path == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "未配置日志文件（logging.output）"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "log file not configured (logging.output)"})
 		return
 	}
 	n, _ := strconv.Atoi(c.DefaultQuery("lines", "200"))
@@ -2601,7 +2506,6 @@ func (s *Server) getLogTail(c *gin.Context) {
 	})
 }
 
-
 func (s *Server) getLogFiles(c *gin.Context) {
 	path := s.logFilePath()
 	type logFile struct {
@@ -2638,11 +2542,10 @@ func (s *Server) getLogFiles(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"dir": filepath.Dir(path), "files": files})
 }
 
-
 func (s *Server) clearLogs(c *gin.Context) {
 	path := s.logFilePath()
 	if path == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "未配置日志文件（logging.output）"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "log file not configured (logging.output)"})
 		return
 	}
 	var freed int64
@@ -2653,7 +2556,7 @@ func (s *Server) clearLogs(c *gin.Context) {
 		}
 		f.Close()
 	} else {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "打开日志失败: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to open log file: " + err.Error()})
 		return
 	}
 
@@ -2674,17 +2577,16 @@ func (s *Server) clearLogs(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"message": fmt.Sprintf("日志已清理（删除 %d 个历史文件）", removed),
+		"message": fmt.Sprintf("logs cleared (removed %d rotated files)", removed),
 		"freed":   freed,
 		"removed": removed,
 	})
 }
 
-
 func (s *Server) backupDir() (string, error) {
 	dbPath := s.cfg.Database.SQLite.Path
 	if dbPath == "" {
-		return "", fmt.Errorf("未配置数据库路径")
+		return "", fmt.Errorf("database path not configured")
 	}
 	return filepath.Join(filepath.Dir(dbPath), "backups"), nil
 }
@@ -2696,7 +2598,6 @@ func isSafeBackupName(name string) bool {
 	return strings.HasPrefix(name, "surveillance-") && strings.HasSuffix(name, ".db")
 }
 
-
 func (s *Server) createBackup(c *gin.Context) {
 	dir, err := s.backupDir()
 	if err != nil {
@@ -2704,7 +2605,7 @@ func (s *Server) createBackup(c *gin.Context) {
 		return
 	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建备份目录失败: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create backup directory: " + err.Error()})
 		return
 	}
 	name := "surveillance-" + time.Now().Format("20060102-150405") + ".db"
@@ -2723,7 +2624,7 @@ func (s *Server) createBackup(c *gin.Context) {
 		dbPath := s.cfg.Database.SQLite.Path
 		if err := copyFileAll(dbPath, full); err != nil {
 			os.Remove(full)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "备份失败: " + err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "backup failed: " + err.Error()})
 			return
 		}
 		if _, err := os.Stat(dbPath + "-wal"); err == nil {
@@ -2735,7 +2636,7 @@ func (s *Server) createBackup(c *gin.Context) {
 	if fi, err := os.Stat(full); err == nil {
 		size = fi.Size()
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "备份成功", "file": name, "size": size, "method": usedMethod})
+	c.JSON(http.StatusOK, gin.H{"message": "backup successful", "file": name, "size": size, "method": usedMethod})
 }
 
 func copyFileAll(src, dst string) error {
@@ -2754,7 +2655,6 @@ func copyFileAll(src, dst string) error {
 	}
 	return out.Sync()
 }
-
 
 func (s *Server) listBackups(c *gin.Context) {
 	type backupFile struct {
@@ -2779,49 +2679,45 @@ func (s *Server) listBackups(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"files": files})
 }
 
-
 func (s *Server) downloadBackup(c *gin.Context) {
 	name := c.Param("name")
 	if !isSafeBackupName(name) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "非法文件名"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file name"})
 		return
 	}
 	dir, _ := s.backupDir()
 	full := filepath.Join(dir, name)
 	if fi, err := os.Stat(full); err != nil || fi.IsDir() {
-		c.JSON(http.StatusNotFound, gin.H{"error": "备份不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "backup not found"})
 		return
 	}
 	c.Header("Content-Disposition", "attachment; filename="+name)
 	c.File(full)
 }
 
-
 func (s *Server) deleteBackup(c *gin.Context) {
 	name := c.Param("name")
 	if !isSafeBackupName(name) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "非法文件名"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file name"})
 		return
 	}
 	dir, _ := s.backupDir()
 	full := filepath.Join(dir, name)
 	if _, err := os.Stat(full); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "备份不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "backup not found"})
 		return
 	}
 	if err := os.Remove(full); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已删除 " + name})
+	c.JSON(http.StatusOK, gin.H{"message": "deleted " + name})
 }
-
 
 const (
 	defaultUpdateAPIBase = "https://api.github.com"
 	defaultGitHubRepo    = "Assen998/surveillance-system"
 )
-
 
 func (s *Server) updateEndpoint() (string, string) {
 	base := os.Getenv("SURVEILLANCE_UPDATE_BASE")
@@ -2841,7 +2737,6 @@ func (s *Server) updateEndpoint() (string, string) {
 	return strings.TrimRight(base, "/"), repo
 }
 
-
 func validProxyAddr(p string) bool {
 	u, err := url.Parse(p)
 	if err != nil || u.Host == "" {
@@ -2849,7 +2744,6 @@ func validProxyAddr(p string) bool {
 	}
 	return u.Scheme == "http" || u.Scheme == "https" || u.Scheme == "socks5"
 }
-
 
 func (s *Server) updateHTTPClient(total time.Duration) *http.Client {
 	tr := &http.Transport{
@@ -2892,7 +2786,7 @@ func (s *Server) fetchLatestRelease() (*githubRelease, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("更新源返回 HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("update source returned HTTP %d", resp.StatusCode)
 	}
 	var rel githubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
@@ -2900,7 +2794,6 @@ func (s *Server) fetchLatestRelease() (*githubRelease, error) {
 	}
 	return &rel, nil
 }
-
 
 func (r *githubRelease) assetForCurrentPlatform() *githubReleaseAsset {
 	ver := strings.TrimPrefix(r.TagName, "v")
@@ -2927,7 +2820,6 @@ func (r *githubRelease) assetForCurrentPlatform() *githubReleaseAsset {
 	return nil
 }
 
-
 func compareVersions(a, b string) int {
 	pa := strings.Split(strings.TrimPrefix(strings.TrimSpace(a), "v"), ".")
 	pb := strings.Split(strings.TrimPrefix(strings.TrimSpace(b), "v"), ".")
@@ -2949,11 +2841,10 @@ func compareVersions(a, b string) int {
 	return 0
 }
 
-
 func (s *Server) checkUpdate(c *gin.Context) {
 	rel, err := s.fetchLatestRelease()
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "检查更新失败: " + err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to check for update: " + err.Error()})
 		return
 	}
 	latest := strings.TrimPrefix(rel.TagName, "v")
@@ -2970,11 +2861,10 @@ func (s *Server) checkUpdate(c *gin.Context) {
 		resp["asset_size"] = asset.Size
 	} else {
 		resp["asset_name"] = ""
-		resp["error"] = fmt.Sprintf("最新 release 中没有适用于 %s/%s 的产物", runtime.GOOS, runtime.GOARCH)
+		resp["error"] = fmt.Sprintf("latest release has no asset for %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 	c.JSON(http.StatusOK, resp)
 }
-
 
 func extractBinaryFromTarGz(tarPath, dst string) error {
 	f, err := os.Open(tarPath)
@@ -3009,35 +2899,33 @@ func extractBinaryFromTarGz(tarPath, dst string) error {
 		}
 		return out.Close()
 	}
-	return fmt.Errorf("更新包中未找到 surveillance-server 二进制")
+	return fmt.Errorf("surveillance-server binary not found in update package")
 }
-
 
 func (s *Server) performUpdate(c *gin.Context) {
 	if s.restartFunc == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "当前构建不支持在线更新"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "this build does not support online update"})
 		return
 	}
 	rel, err := s.fetchLatestRelease()
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "获取最新版本失败: " + err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to fetch latest version: " + err.Error()})
 		return
 	}
 	latest := strings.TrimPrefix(rel.TagName, "v")
 	if compareVersions(latest, s.version) <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("当前已是最新版本（%s）", s.version)})
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("already at the latest version (%s)", s.version)})
 		return
 	}
 	asset := rel.assetForCurrentPlatform()
 	if asset == nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("最新版本 %s 中没有适用于 %s/%s 的产物", rel.TagName, runtime.GOOS, runtime.GOARCH)})
+		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("latest version %s has no asset for %s/%s", rel.TagName, runtime.GOOS, runtime.GOARCH)})
 		return
 	}
 
-
 	exe, err := os.Executable()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法确定运行目录: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to determine running directory: " + err.Error()})
 		return
 	}
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
@@ -3049,40 +2937,37 @@ func (s *Server) performUpdate(c *gin.Context) {
 	defer os.Remove(tmpTar)
 	defer os.Remove(newBin)
 
-
 	client := s.updateHTTPClient(10 * time.Minute)
 	resp, err := client.Get(asset.BrowserDownloadURL)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "下载失败: " + err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "download failed: " + err.Error()})
 		return
 	}
 	f, err := os.Create(tmpTar)
 	if err != nil {
 		resp.Body.Close()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建临时文件失败: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create temporary file: " + err.Error()})
 		return
 	}
 	n, copyErr := io.Copy(f, resp.Body)
 	resp.Body.Close()
 	f.Close()
 	if copyErr != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "下载中断: " + copyErr.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "download interrupted: " + copyErr.Error()})
 		return
 	}
 	if asset.Size > 0 && n != asset.Size {
-		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("下载不完整（期望 %d 字节，实际 %d 字节）", asset.Size, n)})
+		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("incomplete download (expected %d bytes, got %d bytes)", asset.Size, n)})
 		return
 	}
-
 
 	if err := extractBinaryFromTarGz(tmpTar, newBin); err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "解压更新包失败: " + err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to extract update package: " + err.Error()})
 		return
 	}
 
-
 	if fi, err := os.Stat(newBin); err != nil || fi.Size() < 512*1024 {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "新二进制校验失败（文件缺失或过小）"})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "new binary validation failed (file missing or too small)"})
 		return
 	}
 	hdr := make([]byte, 4)
@@ -3091,37 +2976,35 @@ func (s *Server) performUpdate(c *gin.Context) {
 		hf.Close()
 	}
 	if string(hdr) != "\x7fELF" {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "新二进制校验失败（非 ELF 可执行文件）"})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "new binary validation failed (not an ELF executable)"})
 		return
 	}
 	if err := os.Chmod(newBin, 0755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "设置可执行权限失败: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set executable permission: " + err.Error()})
 		return
 	}
-
 
 	bak := filepath.Join(dir, "surveillance-server.bak")
 	os.Remove(bak)
 	if err := os.Rename(exe, bak); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "备份旧二进制失败: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to back up old binary: " + err.Error()})
 		return
 	}
 	if err := os.Rename(newBin, exe); err != nil {
 		os.Rename(bak, exe)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "替换二进制失败: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to replace binary: " + err.Error()})
 		return
 	}
 
-	logrus.Infof("程序已更新 %s → %s，准备原地重启", s.version, latest)
-	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("已更新到 %s，系统重启中...", latest), "new_version": latest})
+	logrus.Infof("program updated %s -> %s, preparing in-place restart", s.version, latest)
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("updated to %s, restarting system...", latest), "new_version": latest})
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		if err := s.restartFunc(exe); err != nil {
-			logrus.Errorf("更新后重启失败: %v", err)
+			logrus.Errorf("restart after update failed: %v", err)
 		}
 	}()
 }
-
 
 func (s *Server) getUpdateConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
@@ -3130,7 +3013,6 @@ func (s *Server) getUpdateConfig(c *gin.Context) {
 		"base_url":    s.cfg.Update.BaseURL,
 	})
 }
-
 
 func (s *Server) updateUpdateConfig(c *gin.Context) {
 	var req struct {
@@ -3145,7 +3027,7 @@ func (s *Server) updateUpdateConfig(c *gin.Context) {
 	if req.Proxy != nil {
 		p := strings.TrimSpace(*req.Proxy)
 		if p != "" && !validProxyAddr(p) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "代理地址格式不正确，应形如 http://192.168.1.5:7890（支持 http/https/socks5）"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid proxy address format, expected e.g. http://192.168.1.5:7890 (http/https/socks5 supported)"})
 			return
 		}
 		s.cfg.Update.Proxy = p
@@ -3157,21 +3039,19 @@ func (s *Server) updateUpdateConfig(c *gin.Context) {
 		s.cfg.Update.BaseURL = strings.TrimRight(strings.TrimSpace(*req.BaseURL), "/")
 	}
 	if err := s.persistConfig(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "配置持久化失败: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist config: " + err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "更新设置已保存（下次检查/更新即生效，无需重启）", "proxy": s.cfg.Update.Proxy})
+	c.JSON(http.StatusOK, gin.H{"message": "update settings saved (effective on next check/update, no restart required)", "proxy": s.cfg.Update.Proxy})
 }
-
 
 func (s *Server) handleWebSocket(c *gin.Context) {
 	conn, err := s.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		logrus.Errorf("WebSocket 升级失败: %v", err)
+		logrus.Errorf("WebSocket upgrade failed: %v", err)
 		return
 	}
 	defer conn.Close()
-
 
 	conn.WriteJSON(gin.H{"type": "welcome", "message": "Connected to surveillance system"})
 
@@ -3192,7 +3072,6 @@ func (s *Server) handleCameraWS(c *gin.Context) {
 		return
 	}
 	defer conn.Close()
-
 
 	conn.WriteJSON(gin.H{"type": "subscribed", "camera_id": cameraID})
 
@@ -3215,7 +3094,6 @@ func (s *Server) handleWSMessage(conn *websocket.Conn, msg map[string]interface{
 	case "unsubscribe_camera":
 	}
 }
-
 
 func parseUint(s string) uint {
 	var id uint

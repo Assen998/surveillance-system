@@ -11,7 +11,7 @@ export default {
     rootPathHint: '录像/快照根目录（相对于服务运行目录）',
     cleanupInterval: '清理检查间隔',
     cleanupIntervalHint: '秒',
-    save: '保存存储设置',
+    saveStorage: '保存存储设置',
     snapshotTitle: '定时抓拍',
     snapshotEnabled: '启用定时抓拍',
     snapshotEnabledHint: '开启后按下方间隔自动抓拍所有录像中的摄像头（保存后立即生效，无需重启）',
@@ -70,5 +70,6 @@ export default {
     minioTestSuccess: 'MinIO 连接成功',
     snapshotSaveSuccess: '保存成功',
     snapshotSaveFailed: '保存失败',
+    networkError: '网络错误',
   },
 }

@@ -32,33 +32,27 @@ var (
 	GitCommit = "unknown"
 )
 
-
 var startTime = time.Now()
 
 func main() {
 
 	configPath := resolveConfigPath(os.Args)
 
-
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		logrus.Fatalf("加载配置失败: %v", err)
+		logrus.Fatalf("failed to load config: %v", err)
 	}
-
 
 	initLogging(cfg)
 
-	logrus.Infof("启动监控录像系统 v%s (build: %s, commit: %s)", Version, BuildTime, GitCommit)
-
+	logrus.Infof("starting surveillance system v%s (build: %s, commit: %s)", Version, BuildTime, GitCommit)
 
 	if err := database.Init(cfg); err != nil {
-		logrus.Fatalf("初始化数据库失败: %v", err)
+		logrus.Fatalf("failed to initialize database: %v", err)
 	}
 	defer database.Close()
 
-
 	ffmpegMgr := ffmpeg.NewManager()
-
 
 	storageRT := storage.NewRuntimeStorage(cfg)
 
@@ -68,7 +62,6 @@ func main() {
 	storageMgr.SetRuntimeStorage(storageRT)
 	alertMgr := alert.NewManager(cfg)
 
-
 	onvifEventMgr := onvifevent.NewManager(cfg, func(a *models.Alert) {
 		alertMgr.OnAlert(a)
 		if a.Type == models.AlertTypeMotion {
@@ -76,32 +69,28 @@ func main() {
 		}
 	})
 
-
 	if err := cameraMgr.Start(); err != nil {
-		logrus.Fatalf("启动摄像头管理器失败: %v", err)
+		logrus.Fatalf("failed to start camera manager: %v", err)
 	}
 
 	if err := storageMgr.Start(); err != nil {
-		logrus.Fatalf("启动存储管理器失败: %v", err)
+		logrus.Fatalf("failed to start storage manager: %v", err)
 	}
 
 	if err := alertMgr.Start(); err != nil {
-		logrus.Fatalf("启动报警管理器失败: %v", err)
+		logrus.Fatalf("failed to start alert manager: %v", err)
 	}
 
 	if err := onvifEventMgr.Start(); err != nil {
-		logrus.Fatalf("启动 ONVIF 事件订阅管理器失败: %v", err)
+		logrus.Fatalf("failed to start ONVIF event subscription manager: %v", err)
 	}
 
-
 	gin.SetMode(cfg.Server.Mode)
-
 
 	apiServer := api.NewServer(cfg, cameraMgr, storageMgr, alertMgr)
 	apiServer.SetRuntimeStorage(storageRT)
 	apiServer.SetConfigPath(configPath)
 	apiServer.SetVersionInfo(Version, BuildTime, GitCommit, startTime)
-
 
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.HTTPPort),
@@ -109,18 +98,17 @@ func main() {
 	}
 
 	go func() {
-		logrus.Infof("HTTP 服务器启动在 %s:%d", cfg.Server.Host, cfg.Server.HTTPPort)
+		logrus.Infof("HTTP server listening on %s:%d", cfg.Server.Host, cfg.Server.HTTPPort)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logrus.Fatalf("HTTP 服务器启动失败: %v", err)
+			logrus.Fatalf("HTTP server failed to start: %v", err)
 		}
 	}()
-
 
 	shutdown := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		defer cancel()
 		if err := httpServer.Shutdown(ctx); err != nil {
-			logrus.Errorf("HTTP 服务器关闭失败: %v", err)
+			logrus.Errorf("HTTP server shutdown failed: %v", err)
 		}
 		cameraMgr.Stop()
 		storageMgr.Stop()
@@ -129,7 +117,6 @@ func main() {
 		ffmpegMgr.StopAll()
 		database.Close()
 	}
-
 
 	apiServer.SetRestartFunc(func(newBinary string) error {
 		target := newBinary
@@ -147,14 +134,13 @@ func main() {
 		return selfExec(target, append([]string{target}, os.Args[1:]...), os.Environ())
 	})
 
-
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logrus.Info("正在关闭服务器...")
+	logrus.Info("shutting down server...")
 	shutdown()
-	logrus.Info("服务器已关闭")
+	logrus.Info("server stopped")
 }
 
 func initLogging(cfg *config.Config) {
@@ -175,7 +161,6 @@ func initLogging(cfg *config.Config) {
 		})
 	}
 
-
 	if cfg.Logging.Output != "" {
 		lj := &lumberjack.Logger{
 			Filename:   cfg.Logging.Output,
@@ -193,7 +178,6 @@ func initLogging(cfg *config.Config) {
 		logrus.SetOutput(io.MultiWriter(os.Stdout, lj))
 	}
 }
-
 
 func resolveConfigPath(args []string) string {
 	if len(args) > 1 && args[1] != "" {

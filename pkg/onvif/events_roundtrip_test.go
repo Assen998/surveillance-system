@@ -9,10 +9,8 @@ import (
 	"testing"
 )
 
-
 func TestEventServiceRoundTrip(t *testing.T) {
 	mux := http.NewServeMux()
-
 
 	mux.HandleFunc("/onvif/device_service", func(w http.ResponseWriter, r *http.Request) {
 		soapAction := r.Header.Get("SOAPAction")
@@ -36,7 +34,6 @@ func TestEventServiceRoundTrip(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusNotFound)
 	})
-
 
 	mux.HandleFunc("/onvif/events", func(w http.ResponseWriter, r *http.Request) {
 		soapAction := r.Header.Get("SOAPAction")
@@ -81,7 +78,6 @@ func TestEventServiceRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("订阅失败: %v", err)
 	}
-
 
 	addr := sub.Address
 	if strings.HasPrefix(addr, "/") {

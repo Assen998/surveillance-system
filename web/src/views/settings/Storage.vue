@@ -2,32 +2,32 @@
   <div class="settings-page">
     <el-card :shadow="never">
       <template #header>
-        <h3>录像存储</h3>
-</template>
+        <h3>{{ t('settingsStorage.title') }}</h3>
+      </template>
       <el-form :model="storageForm" label-width="160">
-        <el-form-item label="分段时长">
+        <el-form-item :label="t('settingsStorage.segmentDuration')">
           <el-input-number v-model="storageForm.segment_duration" :min="30" :max="86400" :step="30" :controls="false" style="width: 140px" />
-          <span class="form-hint">秒（30~1440 分钟）。修改后对新连接/重连的摄像头生效，建议 180（3分钟）</span>
+          <span class="form-hint">{{ t('settingsStorage.segmentDurationHint') }}</span>
         </el-form-item>
-        <el-form-item label="保留天数">
+        <el-form-item :label="t('settingsStorage.maxDays')">
           <el-input-number v-model="storageForm.max_days" :min="1" :max="365" :controls="false" style="width: 140px" />
-          <span class="form-hint">超过该天数的录像自动清理</span>
+          <span class="form-hint">{{ t('settingsStorage.maxDaysHint') }}</span>
         </el-form-item>
-        <el-form-item label="最大存储占用">
+        <el-form-item :label="t('settingsStorage.maxStorageGb')">
           <el-input-number v-model="storageForm.max_storage_gb" :min="0" :max="100000" :precision="1" :step="10" :controls="false" style="width: 140px" />
-          <span class="form-hint">GB，0 = 不限制。与保留天数并行，谁先达到先清理（超限时从最旧录像删起）</span>
+          <span class="form-hint">{{ t('settingsStorage.maxStorageGbHint') }}</span>
         </el-form-item>
-        <el-form-item label="存储路径">
+        <el-form-item :label="t('settingsStorage.rootPath')">
           <el-input v-model="storageForm.root_path" placeholder="./recordings" style="width: 360px" />
-          <span class="form-hint">录像/快照根目录（相对于服务运行目录）</span>
+          <span class="form-hint">{{ t('settingsStorage.rootPathHint') }}</span>
         </el-form-item>
-        <el-form-item label="清理检查间隔">
+        <el-form-item :label="t('settingsStorage.cleanupInterval')">
           <el-input-number v-model="storageForm.cleanup_interval" :min="300" :max="86400" :step="300" :controls="false" style="width: 140px" />
-          <span class="form-hint">秒</span>
+          <span class="form-hint">{{ t('settingsStorage.cleanupIntervalHint') }}</span>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="saveStorageSettings" :loading="storageSaving">
-            <el-icon><Check /></el-icon> 保存存储设置
+            <el-icon><Check /></el-icon> {{ t('settingsStorage.saveStorage') }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -35,20 +35,20 @@
 
     <el-card :shadow="never" class="mt-16">
       <template #header>
-        <h3>定时抓拍</h3>
-</template>
+        <h3>{{ t('settingsStorage.snapshotTitle') }}</h3>
+      </template>
       <el-form :model="snapshotForm" label-width="160">
-        <el-form-item label="启用定时抓拍">
+        <el-form-item :label="t('settingsStorage.snapshotEnabled')">
           <el-switch v-model="snapshotForm.enabled" />
-          <span class="form-hint">开启后按下方间隔自动抓拍所有录像中的摄像头（保存后立即生效，无需重启）</span>
+          <span class="form-hint">{{ t('settingsStorage.snapshotEnabledHint') }}</span>
         </el-form-item>
-        <el-form-item label="抓拍间隔">
+        <el-form-item :label="t('settingsStorage.snapshotInterval')">
           <el-input-number v-model="snapshotForm.interval" :min="30" :max="86400" :step="30" :controls="false" style="width: 140px" />
-          <span class="form-hint">秒（30~86400），建议 300（5分钟）</span>
+          <span class="form-hint">{{ t('settingsStorage.snapshotIntervalHint') }}</span>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="saveSnapshotSettings" :loading="snapshotSaving">
-            <el-icon><Check /></el-icon> 保存抓拍设置
+            <el-icon><Check /></el-icon> {{ t('settingsStorage.saveSnapshot') }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -56,44 +56,44 @@
 
     <el-card :shadow="never" class="mt-16">
       <template #header>
-        <h3>WebDAV 远程存储（可选）</h3>
-</template>
+        <h3>{{ t('settingsStorage.webdavTitle') }}</h3>
+      </template>
       <el-form :model="storageForm.webdav" label-width="160">
-        <el-form-item label="启用 WebDAV">
+        <el-form-item :label="t('settingsStorage.webdavEnabled')">
           <el-switch v-model="storageForm.webdav.enabled" />
-          <span class="form-hint">开启后每个录像分段完成即上传到 WebDAV 服务器（本地仍保留）</span>
+          <span class="form-hint">{{ t('settingsStorage.webdavEnabledHint') }}</span>
         </el-form-item>
-        <el-form-item label="仅存 WebDAV">
+        <el-form-item :label="t('settingsStorage.webdavOnly')">
           <el-switch v-model="storageForm.webdav.only" :disabled="!storageForm.webdav.enabled" />
-          <span class="form-hint">开启后录像上传成功即删除本地副本，本地仅作临时缓冲（上传失败则保留本地防丢失）；旧录像回放自动走 WebDAV 流式播放</span>
+          <span class="form-hint">{{ t('settingsStorage.webdavOnlyHint') }}</span>
         </el-form-item>
-        <el-form-item label="服务器地址">
-          <el-input v-model="storageForm.webdav.url" placeholder="http://192.168.1.100:5005/webdav" style="width: 400px" />
+        <el-form-item :label="t('settingsStorage.webdavUrl')">
+          <el-input v-model="storageForm.webdav.url" :placeholder="t('settingsStorage.webdavUrlPlaceholder')" style="width: 400px" />
         </el-form-item>
-        <el-form-item label="用户名">
-          <el-input v-model="storageForm.webdav.username" placeholder="webdav 用户" style="width: 300px" />
+        <el-form-item :label="t('settingsStorage.webdavUsername')">
+          <el-input v-model="storageForm.webdav.username" :placeholder="t('settingsStorage.webdavUsernamePlaceholder')" style="width: 300px" />
         </el-form-item>
-        <el-form-item label="密码">
-          <el-input v-model="storageForm.webdav.password" type="password" show-password placeholder="留空表示不修改" style="width: 300px" />
+        <el-form-item :label="t('settingsStorage.webdavPassword')">
+          <el-input v-model="storageForm.webdav.password" type="password" show-password :placeholder="t('settingsStorage.webdavPasswordPlaceholder')" style="width: 300px" />
         </el-form-item>
-        <el-form-item label="远程根目录">
-          <el-input v-model="storageForm.webdav.base_path" placeholder="surveillance" style="width: 300px" />
-          <span class="form-hint">录像将上传到 {远程根目录}/camera_{id}/ 下</span>
+        <el-form-item :label="t('settingsStorage.webdavBasePath')">
+          <el-input v-model="storageForm.webdav.base_path" :placeholder="t('settingsStorage.webdavBasePathPlaceholder')" style="width: 300px" />
+          <span class="form-hint">{{ t('settingsStorage.webdavBasePathHint') }}</span>
         </el-form-item>
-        <el-form-item label="远程保留天数">
+        <el-form-item :label="t('settingsStorage.webdavMaxDays')">
           <el-input-number v-model="storageForm.webdav.max_days" :min="0" :max="3650" :controls="false" style="width: 140px" />
-          <span class="form-hint">独立于本地保留天数；0 = 不按时间自动删除（与本地清理周期同步执行）</span>
+          <span class="form-hint">{{ t('settingsStorage.webdavMaxDaysHint') }}</span>
         </el-form-item>
-        <el-form-item label="远程占用上限(GB)">
+        <el-form-item :label="t('settingsStorage.webdavMaxStorageGb')">
           <el-input-number v-model="storageForm.webdav.max_storage_gb" :min="0" :max="100000" :step="0.5" :precision="1" :controls="false" style="width: 140px" />
-          <span class="form-hint">0 = 不限制；超出后从最旧远程录像开始删除，直到回到上限以内</span>
+          <span class="form-hint">{{ t('settingsStorage.webdavMaxStorageGbHint') }}</span>
         </el-form-item>
         <el-form-item>
           <el-button @click="testWebdavConnection" :loading="webdavTesting">
-            <el-icon><Connection /></el-icon> 测试连接
+            <el-icon><Connection /></el-icon> {{ t('settingsStorage.testConnection') }}
           </el-button>
           <el-button type="primary" @click="saveStorageSettings" :loading="storageSaving">
-            <el-icon><Check /></el-icon> 保存
+            <el-icon><Check /></el-icon> {{ t('settingsStorage.save') }}
           </el-button>
           <span v-if="webdavTestResult" :class="['ml-12', webdavTestResult.ok ? 'text-success' : 'text-danger']">
             {{ webdavTestResult.message || webdavTestResult.error }}
@@ -104,53 +104,53 @@
 
     <el-card :shadow="never" class="mt-16">
       <template #header>
-        <h3>MinIO 对象存储（可选）</h3>
-</template>
+        <h3>{{ t('settingsStorage.minioTitle') }}</h3>
+      </template>
       <el-form :model="storageForm.minio" label-width="160">
-        <el-form-item label="启用 MinIO">
+        <el-form-item :label="t('settingsStorage.minioEnabled')">
           <el-switch v-model="storageForm.minio.enabled" />
-          <span class="form-hint">开启后每个录像分段完成即上传到 MinIO（S3 兼容对象存储，本地仍保留）</span>
+          <span class="form-hint">{{ t('settingsStorage.minioEnabledHint') }}</span>
         </el-form-item>
-        <el-form-item label="仅存 MinIO">
+        <el-form-item :label="t('settingsStorage.minioOnly')">
           <el-switch v-model="storageForm.minio.only" :disabled="!storageForm.minio.enabled" />
-          <span class="form-hint">开启后录像上传成功即删除本地副本，本地仅作临时缓冲（上传失败则保留本地防丢失）；旧录像回放自动走 MinIO 流式播放</span>
+          <span class="form-hint">{{ t('settingsStorage.minioOnlyHint') }}</span>
         </el-form-item>
-        <el-form-item label="服务地址">
-          <el-input v-model="storageForm.minio.endpoint" placeholder="192.168.1.100:9000" style="width: 400px" />
-          <span class="form-hint">host:port，不含 http:// 前缀</span>
+        <el-form-item :label="t('settingsStorage.minioEndpoint')">
+          <el-input v-model="storageForm.minio.endpoint" :placeholder="t('settingsStorage.minioEndpointPlaceholder')" style="width: 400px" />
+          <span class="form-hint">{{ t('settingsStorage.minioEndpointHint') }}</span>
         </el-form-item>
-        <el-form-item label="Access Key">
-          <el-input v-model="storageForm.minio.access_key" placeholder="访问密钥 ID" style="width: 300px" />
+        <el-form-item :label="t('settingsStorage.minioAccessKey')">
+          <el-input v-model="storageForm.minio.access_key" :placeholder="t('settingsStorage.minioAccessKeyPlaceholder')" style="width: 300px" />
         </el-form-item>
-        <el-form-item label="Secret Key">
-          <el-input v-model="storageForm.minio.secret_key" type="password" show-password placeholder="留空表示不修改" style="width: 300px" />
+        <el-form-item :label="t('settingsStorage.minioSecretKey')">
+          <el-input v-model="storageForm.minio.secret_key" type="password" show-password :placeholder="t('settingsStorage.minioSecretKeyPlaceholder')" style="width: 300px" />
         </el-form-item>
-        <el-form-item label="Bucket">
-          <el-input v-model="storageForm.minio.bucket" placeholder="surveillance" style="width: 300px" />
-          <span class="form-hint">不存在时测试连接会自动创建</span>
+        <el-form-item :label="t('settingsStorage.minioBucket')">
+          <el-input v-model="storageForm.minio.bucket" :placeholder="t('settingsStorage.minioBucketPlaceholder')" style="width: 300px" />
+          <span class="form-hint">{{ t('settingsStorage.minioBucketHint') }}</span>
         </el-form-item>
-        <el-form-item label="使用 SSL">
+        <el-form-item :label="t('settingsStorage.minioUseSsl')">
           <el-switch v-model="storageForm.minio.use_ssl" />
-          <span class="form-hint">局域网部署一般关闭</span>
+          <span class="form-hint">{{ t('settingsStorage.minioUseSslHint') }}</span>
         </el-form-item>
-        <el-form-item label="远程根目录">
-          <el-input v-model="storageForm.minio.base_path" placeholder="surveillance" style="width: 300px" />
-          <span class="form-hint">录像将上传到 bucket 的 {远程根目录}/camera_{id}/ 前缀下</span>
+        <el-form-item :label="t('settingsStorage.minioBasePath')">
+          <el-input v-model="storageForm.minio.base_path" :placeholder="t('settingsStorage.minioBasePathPlaceholder')" style="width: 300px" />
+          <span class="form-hint">{{ t('settingsStorage.minioBasePathHint') }}</span>
         </el-form-item>
-        <el-form-item label="远程保留天数">
+        <el-form-item :label="t('settingsStorage.minioMaxDays')">
           <el-input-number v-model="storageForm.minio.max_days" :min="0" :max="3650" :controls="false" style="width: 140px" />
-          <span class="form-hint">独立于本地保留天数；0 = 不按时间自动删除（与本地清理周期同步执行）</span>
+          <span class="form-hint">{{ t('settingsStorage.minioMaxDaysHint') }}</span>
         </el-form-item>
-        <el-form-item label="远程占用上限(GB)">
+        <el-form-item :label="t('settingsStorage.minioMaxStorageGb')">
           <el-input-number v-model="storageForm.minio.max_storage_gb" :min="0" :max="100000" :step="0.5" :precision="1" :controls="false" style="width: 140px" />
-          <span class="form-hint">0 = 不限制；超出后从最旧远程录像开始删除，直到回到上限以内</span>
+          <span class="form-hint">{{ t('settingsStorage.minioMaxStorageGbHint') }}</span>
         </el-form-item>
         <el-form-item>
           <el-button @click="testMinioConnection" :loading="minioTesting">
-            <el-icon><Connection /></el-icon> 测试连接
+            <el-icon><Connection /></el-icon> {{ t('settingsStorage.testConnection') }}
           </el-button>
           <el-button type="primary" @click="saveStorageSettings" :loading="storageSaving">
-            <el-icon><Check /></el-icon> 保存
+            <el-icon><Check /></el-icon> {{ t('settingsStorage.save') }}
           </el-button>
           <span v-if="minioTestResult" :class="['ml-12', minioTestResult.ok ? 'text-success' : 'text-danger']">
             {{ minioTestResult.message || minioTestResult.error }}
@@ -166,7 +166,9 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Check, Connection } from '@element-plus/icons-vue'
 import { api } from '@/api'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 
 const storageSaving = ref(false)
 const webdavTesting = ref(false)
@@ -203,7 +205,6 @@ const storageForm = reactive({
   },
 })
 
-
 const snapshotSaving = ref(false)
 const snapshotForm = reactive({
   enabled: true,
@@ -227,9 +228,9 @@ const saveSnapshotSettings = async () => {
       snapshot_enabled: snapshotForm.enabled,
       snapshot_interval: snapshotForm.interval,
     })
-    ElMessage.success(res?.message || '保存成功')
+    ElMessage.success(res?.message || t('settingsStorage.snapshotSaveSuccess'))
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.error || '保存失败')
+    ElMessage.error(e?.response?.data?.error || t('settingsStorage.snapshotSaveFailed'))
   } finally {
     snapshotSaving.value = false
   }
@@ -302,11 +303,11 @@ const saveStorageSettings = async () => {
         only: storageForm.minio.only,
       },
     })
-    ElMessage.success(res?.message || '保存成功')
+    ElMessage.success(res?.message || t('settingsStorage.saveSuccess'))
     storageForm.webdav.password = ''
     storageForm.minio.secret_key = ''
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.error || '保存失败')
+    ElMessage.error(e?.response?.data?.error || t('settingsStorage.saveFailed'))
   } finally {
     storageSaving.value = false
   }
@@ -314,7 +315,7 @@ const saveStorageSettings = async () => {
 
 const testWebdavConnection = async () => {
   if (!storageForm.webdav.url) {
-    ElMessage.warning('请填写 WebDAV 服务器地址')
+    ElMessage.warning(t('settingsStorage.webdavUrlRequired'))
     return
   }
   webdavTesting.value = true
@@ -327,9 +328,9 @@ const testWebdavConnection = async () => {
       base_path: storageForm.webdav.base_path,
     })
     webdavTestResult.value = { ok: !!res.ok, message: res.message, error: res.error }
-    if (res.ok) ElMessage.success('WebDAV 连接成功')
+    if (res.ok) ElMessage.success(t('settingsStorage.webdavTestSuccess'))
   } catch (e: any) {
-    webdavTestResult.value = { ok: false, error: e?.message || '网络错误' }
+    webdavTestResult.value = { ok: false, error: e?.message || t('settingsStorage.networkError') }
   } finally {
     webdavTesting.value = false
   }
@@ -337,7 +338,7 @@ const testWebdavConnection = async () => {
 
 const testMinioConnection = async () => {
   if (!storageForm.minio.endpoint || !storageForm.minio.bucket) {
-    ElMessage.warning('请填写 MinIO 服务地址与 Bucket')
+    ElMessage.warning(t('settingsStorage.minioEndpointBucketRequired'))
     return
   }
   minioTesting.value = true
@@ -352,9 +353,9 @@ const testMinioConnection = async () => {
       base_path: storageForm.minio.base_path,
     })
     minioTestResult.value = { ok: !!res.ok, message: res.message, error: res.error }
-    if (res.ok) ElMessage.success('MinIO 连接成功')
+    if (res.ok) ElMessage.success(t('settingsStorage.minioTestSuccess'))
   } catch (e: any) {
-    minioTestResult.value = { ok: false, error: e?.message || '网络错误' }
+    minioTestResult.value = { ok: false, error: e?.message || t('settingsStorage.networkError') }
   } finally {
     minioTesting.value = false
   }

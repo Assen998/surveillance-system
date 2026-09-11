@@ -9,13 +9,12 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/sirupsen/logrus"
 	"github.com/yourorg/surveillance-system/internal/config"
 	"github.com/yourorg/surveillance-system/internal/models"
-	"github.com/sirupsen/logrus"
 )
 
 var DB *gorm.DB
-
 
 var FirstRun bool
 
@@ -32,7 +31,7 @@ func Init(cfg *config.Config) error {
 
 		dir := filepath.Dir(dbPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("创建数据库目录失败: %w", err)
+			return fmt.Errorf("failed to create database directory: %w", err)
 		}
 
 		dialector = sqlite.Open(dbPath + "?_foreign_keys=on&_journal_mode=WAL&_synchronous=NORMAL")
@@ -46,42 +45,38 @@ func Init(cfg *config.Config) error {
 			cfg.Database.Postgres.SSLMode,
 		)
 
-
-		return fmt.Errorf("PostgreSQL 支持待实现")
+		return fmt.Errorf("PostgreSQL support not implemented yet")
 	default:
-		return fmt.Errorf("不支持的数据库类型: %s", cfg.Database.Type)
+		return fmt.Errorf("unsupported database type: %s", cfg.Database.Type)
 	}
 
 	var err error
 	DB, err = gorm.Open(dialector, &gorm.Config{
-		Logger: logger.Default.LogMode(logLevel(cfg.Logging.Level)),
+		Logger:      logger.Default.LogMode(logLevel(cfg.Logging.Level)),
 		PrepareStmt: true,
 	})
 	if err != nil {
-		return fmt.Errorf("连接数据库失败: %w", err)
+		return fmt.Errorf("failed to connect to database: %w", err)
 	}
-
 
 	sqlDB, err := DB.DB()
 	if err != nil {
-		return fmt.Errorf("获取底层连接失败: %w", err)
+		return fmt.Errorf("failed to get underlying connection: %w", err)
 	}
 	sqlDB.SetMaxOpenConns(20)
 	sqlDB.SetMaxIdleConns(10)
 
-
 	if err := autoMigrate(); err != nil {
-		return fmt.Errorf("数据库迁移失败: %w", err)
+		return fmt.Errorf("database migration failed: %w", err)
 	}
-
 
 	if FirstRun {
-		logrus.Info("检测到全新安装：跳过默认管理员创建，请在 Web 首次设置页创建管理员账户")
+		logrus.Info("fresh install detected: skipping default admin creation, please create an admin account on the web first-time setup page")
 	} else if err := initDefaultData(); err != nil {
-		logrus.Warnf("初始化默认数据失败: %v", err)
+		logrus.Warnf("failed to initialize default data: %v", err)
 	}
 
-	logrus.Info("数据库初始化完成")
+	logrus.Info("database initialization completed")
 	return nil
 }
 
@@ -118,7 +113,6 @@ func initDefaultData() error {
 
 	const legacyPlaceholderHash = "$2a$10$XQxQxQxQxQxQxQxQxQxQxO"
 
-
 	var count int64
 	DB.Model(&models.User{}).Where("role = ?", models.UserRoleAdmin).Count(&count)
 	if count == 0 {
@@ -132,10 +126,9 @@ func initDefaultData() error {
 		if err := DB.Create(admin).Error; err != nil {
 			return err
 		}
-		logrus.Info("创建默认管理员用户: admin/admin123 (请登录后尽快修改密码)")
+		logrus.Info("created default admin user: admin/admin123 (please change the password after logging in as soon as possible)")
 		return nil
 	}
-
 
 	res := DB.Model(&models.User{}).
 		Where("username = ? AND password = ?", "admin", legacyPlaceholderHash).
@@ -144,7 +137,7 @@ func initDefaultData() error {
 		return res.Error
 	}
 	if res.RowsAffected > 0 {
-		logrus.Info("检测到旧版占位密码，已重置为默认密码: admin/admin123 (请尽快修改)")
+		logrus.Info("legacy placeholder password detected, reset to default password: admin/admin123 (please change it as soon as possible)")
 	}
 	return nil
 }

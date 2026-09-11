@@ -11,7 +11,7 @@ export default {
     rootPathHint: 'Recording/snapshot root directory (relative to server working directory)',
     cleanupInterval: 'Cleanup Check Interval',
     cleanupIntervalHint: 'Seconds',
-    save: 'Save Storage Settings',
+    saveStorage: 'Save Storage Settings',
     snapshotTitle: 'Scheduled Snapshots',
     snapshotEnabled: 'Enable Scheduled Snapshots',
     snapshotEnabledHint: 'When enabled, automatically snapshot all recording cameras at the interval below (takes effect immediately, no restart needed)',
@@ -70,5 +70,6 @@ export default {
     minioTestSuccess: 'MinIO connected',
     snapshotSaveSuccess: 'Saved',
     snapshotSaveFailed: 'Save failed',
+    networkError: 'Network error',
   },
 }

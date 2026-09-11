@@ -124,7 +124,7 @@
           <div class="info-item"><span class="label">{{ t('settingsMaint.memUsage') }}</span><span class="value">{{ formatBytes((sysInfo.mem_used_mb || 0) * 1024 * 1024) }} / {{ formatBytes((sysInfo.mem_total_mb || 0) * 1024 * 1024) }}</span></div>
           <div class="info-item"><span class="label">{{ t('settingsMaint.diskUsage') }}</span><span class="value">{{ formatBytes((sysInfo.disk_used_mb || 0) * 1024 * 1024) }} / {{ formatBytes((sysInfo.disk_total_mb || 0) * 1024 * 1024) }}<span class="text-muted" v-if="sysInfo.disk_path"> ({{ sysInfo.disk_path }})</span></span></div>
           <div class="info-item"><span class="label">{{ t('settingsMaint.dbSize') }}</span><span class="value">{{ formatBytes(sysInfo.db_size) }}</span></div>
-          <div class="info-item"><span class="label">{{ t('settingsMaint.cameraRecording') }}</span><span class="value">{{ sysInfo.camera_count }} 台 / {{ sysInfo.recording_count }} 段</span></div>
+          <div class="info-item"><span class="label">{{ t('settingsMaint.cameraRecording') }}</span><span class="value">{{ t('settingsMaint.cameraRecordingValue', { cams: sysInfo.camera_count, recs: sysInfo.recording_count }) }}</span></div>
           <div class="info-item"><span class="label">{{ t('settingsMaint.logSize') }}</span><span class="value">{{ formatBytes(sysInfo.log_size) }}</span></div>
           <div class="info-item"><span class="label">{{ t('settingsMaint.configPath') }}</span><span class="value">{{ sysInfo.config_path }}</span></div>
         </div>

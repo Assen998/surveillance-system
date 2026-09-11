@@ -10,41 +10,41 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/yourorg/surveillance-system/internal/config"
 	"github.com/yourorg/surveillance-system/internal/database"
 	"github.com/yourorg/surveillance-system/internal/models"
 	"github.com/yourorg/surveillance-system/pkg/minio"
 	"github.com/yourorg/surveillance-system/pkg/webdav"
-	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
 type Manager struct {
-	cfg      *config.Config
-	db       *gorm.DB
-	ctx      context.Context
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
-	mu       sync.Mutex
-	stats    StorageStats
-	runtime  *RuntimeStorage
+	cfg       *config.Config
+	db        *gorm.DB
+	ctx       context.Context
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	mu        sync.Mutex
+	stats     StorageStats
+	runtime   *RuntimeStorage
 	cleanupMu sync.Mutex
 }
 
 type StorageStats struct {
-	TotalSpace     int64 `json:"total_space"`
-	UsedSpace      int64 `json:"used_space"`
-	FreeSpace      int64 `json:"free_space"`
-	RecordingCount int64 `json:"recording_count"`
-	SnapshotCount  int64 `json:"snapshot_count"`
+	TotalSpace     int64                      `json:"total_space"`
+	UsedSpace      int64                      `json:"used_space"`
+	FreeSpace      int64                      `json:"free_space"`
+	RecordingCount int64                      `json:"recording_count"`
+	SnapshotCount  int64                      `json:"snapshot_count"`
 	CameraStats    map[uint]CameraStorageStat `json:"camera_stats"`
 }
 
 type CameraStorageStat struct {
-	CameraID       uint   `json:"camera_id"`
-	CameraName     string `json:"camera_name"`
-	RecordingCount int64  `json:"recording_count"`
-	TotalSize      int64  `json:"total_size"`
+	CameraID        uint       `json:"camera_id"`
+	CameraName      string     `json:"camera_name"`
+	RecordingCount  int64      `json:"recording_count"`
+	TotalSize       int64      `json:"total_size"`
 	OldestRecording *time.Time `json:"oldest_recording"`
 	LatestRecording *time.Time `json:"latest_recording"`
 }
@@ -60,11 +60,9 @@ func NewManager(cfg *config.Config) *Manager {
 	}
 }
 
-
 func (m *Manager) SetRuntimeStorage(r *RuntimeStorage) {
 	m.runtime = r
 }
-
 
 func (m *Manager) local() config.LocalStorageConfig {
 	if m.runtime != nil {
@@ -73,14 +71,12 @@ func (m *Manager) local() config.LocalStorageConfig {
 	return m.cfg.Storage.Local
 }
 
-
 func (m *Manager) webdav() config.WebdavConfig {
 	if m.runtime != nil {
 		return m.runtime.GetWebdav()
 	}
 	return m.cfg.Storage.Webdav
 }
-
 
 func (m *Manager) minio() config.MinIOConfig {
 	if m.runtime != nil {
@@ -91,13 +87,12 @@ func (m *Manager) minio() config.MinIOConfig {
 
 func (m *Manager) Start() error {
 	if !m.cfg.Storage.Local.Enabled {
-		logrus.Info("本地存储未启用，跳过存储管理器启动")
+		logrus.Info("local storage not enabled, skipping storage manager start")
 		return nil
 	}
 
-
 	if err := os.MkdirAll(m.cfg.Storage.Local.RootPath, 0755); err != nil {
-		return fmt.Errorf("创建存储根目录失败: %w", err)
+		return fmt.Errorf("failed to create storage root directory: %w", err)
 	}
 
 	m.wg.Add(1)
@@ -106,14 +101,14 @@ func (m *Manager) Start() error {
 	m.wg.Add(1)
 	go m.statsLoop()
 
-	logrus.Info("存储管理器启动完成")
+	logrus.Info("storage manager started")
 	return nil
 }
 
 func (m *Manager) Stop() error {
 	m.cancel()
 	m.wg.Wait()
-	logrus.Info("存储管理器已停止")
+	logrus.Info("storage manager stopped")
 	return nil
 }
 
@@ -122,7 +117,6 @@ func (m *Manager) cleanupLoop() {
 
 	ticker := time.NewTicker(time.Duration(m.cfg.Storage.Local.CleanupInterval) * time.Second)
 	defer ticker.Stop()
-
 
 	m.cleanup()
 
@@ -142,7 +136,6 @@ func (m *Manager) cleanup() {
 	m.doCleanup()
 }
 
-
 func (m *Manager) TriggerCleanup() {
 	m.cleanup()
 }
@@ -161,11 +154,10 @@ func (m *Manager) doCleanup() {
 func (m *Manager) doCleanupLocal(loc config.LocalStorageConfig) {
 	cutoff := time.Now().AddDate(0, 0, -loc.MaxDays)
 
-
 	var expiredRecordings []models.Recording
 	if err := m.db.Where("end_time < ? AND storage_type = 'local' AND deleted_at IS NULL", cutoff).
 		Find(&expiredRecordings).Error; err != nil {
-		logrus.Errorf("查询过期录像失败: %v", err)
+		logrus.Errorf("failed to query expired recordings: %v", err)
 		return
 	}
 
@@ -178,39 +170,35 @@ func (m *Manager) doCleanupLocal(loc config.LocalStorageConfig) {
 		}
 
 		if err := m.db.Delete(&rec).Error; err != nil {
-			logrus.Errorf("删除录像记录失败: %v", err)
+			logrus.Errorf("failed to delete recording record: %v", err)
 		} else {
 			deletedCount++
 		}
 	}
 
-
 	m.cleanupOrphanFiles()
-
 
 	var expiredSnapshots []models.Snapshot
 	if err := m.db.Where("timestamp < ? AND storage_type = 'local' AND deleted_at IS NULL", cutoff).
 		Find(&expiredSnapshots).Error; err != nil {
-		logrus.Errorf("查询过期抓拍失败: %v", err)
+		logrus.Errorf("failed to query expired snapshots: %v", err)
 	} else {
 		for _, snap := range expiredSnapshots {
 			if err := os.Remove(snap.FilePath); err != nil && !os.IsNotExist(err) {
-				logrus.Warnf("删除抓拍文件失败 %s: %v", snap.FilePath, err)
+				logrus.Warnf("failed to delete snapshot file %s: %v", snap.FilePath, err)
 			}
 			m.db.Delete(&snap)
 		}
 	}
 
 	if deletedCount > 0 {
-		logrus.Infof("存储清理完成: 删除 %d 个录像片段, 释放 %s", deletedCount, formatBytes(deletedSize))
+		logrus.Infof("storage cleanup complete: deleted %d recording segments, freed %s", deletedCount, formatBytes(deletedSize))
 	}
-
 
 	if loc.MaxStorageGB > 0 {
 		m.enforceMaxStorage(loc)
 	}
 }
-
 
 func (m *Manager) doCleanupWebdav() {
 	wd := m.webdav()
@@ -238,7 +226,7 @@ func (m *Manager) doCleanupWebdav() {
 		}
 		entries, err := client.List(dir)
 		if err != nil {
-			logrus.Warnf("WebDAV 清理：列目录失败 %s: %v", dir, err)
+			logrus.Warnf("WebDAV cleanup: failed to list directory %s: %v", dir, err)
 			return
 		}
 		for _, e := range entries {
@@ -264,7 +252,6 @@ func (m *Manager) doCleanupWebdav() {
 
 	protectWindow := 10 * time.Minute
 
-
 	deleted := 0
 	var released int64
 	deletedPaths := make(map[string]bool)
@@ -277,12 +264,11 @@ func (m *Manager) doCleanupWebdav() {
 					released += f.size
 					deletedPaths[f.path] = true
 				} else {
-					logrus.Warnf("WebDAV 清理：删除过期文件失败 %s: %v", f.path, err)
+					logrus.Warnf("WebDAV cleanup: failed to delete expired file %s: %v", f.path, err)
 				}
 			}
 		}
 	}
-
 
 	if wd.MaxStorageGB > 0 {
 		var total int64
@@ -309,19 +295,18 @@ func (m *Manager) doCleanupWebdav() {
 					deleted++
 					released += f.size
 					remaining -= f.size
-					logrus.Debugf("WebDAV 容量清理：删除 %s（%s）", f.path, formatBytes(f.size))
+					logrus.Debugf("WebDAV capacity cleanup: deleted %s (%s)", f.path, formatBytes(f.size))
 				} else {
-					logrus.Warnf("WebDAV 容量清理：删除失败 %s: %v", f.path, err)
+					logrus.Warnf("WebDAV capacity cleanup: delete failed %s: %v", f.path, err)
 				}
 			}
 		}
 	}
 
 	if deleted > 0 {
-		logrus.Infof("WebDAV 清理完成: 删除 %d 个远程文件, 释放约 %s", deleted, formatBytes(released))
+		logrus.Infof("WebDAV cleanup complete: deleted %d remote files, freed approx. %s", deleted, formatBytes(released))
 	}
 }
-
 
 func (m *Manager) doCleanupMinio() {
 	mn := m.minio()
@@ -334,14 +319,14 @@ func (m *Manager) doCleanupMinio() {
 
 	client, err := minio.NewClient(mn.Endpoint, mn.AccessKey, mn.SecretKey, mn.Bucket, mn.UseSSL)
 	if err != nil {
-		logrus.Warnf("MinIO 清理：创建客户端失败: %v", err)
+		logrus.Warnf("MinIO cleanup: failed to create client: %v", err)
 		return
 	}
 
 	base := strings.Trim(strings.TrimSpace(mn.BasePath), "/")
 	entries, err := client.List(base)
 	if err != nil {
-		logrus.Warnf("MinIO 清理：列对象失败: %v", err)
+		logrus.Warnf("MinIO cleanup: failed to list objects: %v", err)
 		return
 	}
 	if len(entries) == 0 {
@@ -364,7 +349,7 @@ func (m *Manager) doCleanupMinio() {
 					released += f.Size
 					deletedKeys[f.Key] = true
 				} else {
-					logrus.Warnf("MinIO 清理：删除过期对象失败 %s: %v", f.Key, err)
+					logrus.Warnf("MinIO cleanup: failed to delete expired object %s: %v", f.Key, err)
 				}
 			}
 		}
@@ -392,19 +377,18 @@ func (m *Manager) doCleanupMinio() {
 					deleted++
 					released += f.Size
 					remaining -= f.Size
-					logrus.Debugf("MinIO 容量清理：删除 %s（%s）", f.Key, formatBytes(f.Size))
+					logrus.Debugf("MinIO capacity cleanup: deleted %s (%s)", f.Key, formatBytes(f.Size))
 				} else {
-					logrus.Warnf("MinIO 容量清理：删除失败 %s: %v", f.Key, err)
+					logrus.Warnf("MinIO capacity cleanup: delete failed %s: %v", f.Key, err)
 				}
 			}
 		}
 	}
 
 	if deleted > 0 {
-		logrus.Infof("MinIO 清理完成: 删除 %d 个远程对象, 释放约 %s", deleted, formatBytes(released))
+		logrus.Infof("MinIO cleanup complete: deleted %d remote objects, freed approx. %s", deleted, formatBytes(released))
 	}
 }
-
 
 func (m *Manager) deleteRecordingLocalFiles(rec *models.Recording) int64 {
 	size := int64(0)
@@ -412,17 +396,16 @@ func (m *Manager) deleteRecordingLocalFiles(rec *models.Recording) int64 {
 		if err := os.Remove(rec.FilePath); err == nil {
 			size = rec.FileSize
 		} else if !os.IsNotExist(err) {
-			logrus.Warnf("删除文件失败 %s: %v", rec.FilePath, err)
+			logrus.Warnf("failed to delete file %s: %v", rec.FilePath, err)
 		}
 	}
 	if rec.IndexPath != "" {
 		if err := os.Remove(rec.IndexPath); err != nil && !os.IsNotExist(err) {
-			logrus.Warnf("删除文件失败 %s: %v", rec.IndexPath, err)
+			logrus.Warnf("failed to delete file %s: %v", rec.IndexPath, err)
 		}
 	}
 	return size
 }
-
 
 func (m *Manager) enforceMaxStorage(loc config.LocalStorageConfig) {
 	limitBytes := int64(loc.MaxStorageGB * 1024 * 1024 * 1024)
@@ -435,13 +418,13 @@ func (m *Manager) enforceMaxStorage(loc config.LocalStorageConfig) {
 		return
 	}
 
-	logrus.Warnf("存储占用 %s 超过上限 %s，开始容量清理（从最旧录像开始删除）",
+	logrus.Warnf("storage usage %s exceeds limit %s, starting capacity cleanup (deleting from the oldest recordings)",
 		formatBytes(used), formatBytes(limitBytes))
 
 	var recordings []models.Recording
 	if err := m.db.Where("storage_type = 'local' AND status = 'completed' AND deleted_at IS NULL").
 		Order("start_time ASC").Find(&recordings).Error; err != nil {
-		logrus.Errorf("容量清理查询录像失败: %v", err)
+		logrus.Errorf("capacity cleanup: failed to query recordings: %v", err)
 		return
 	}
 
@@ -456,12 +439,11 @@ func (m *Manager) enforceMaxStorage(loc config.LocalStorageConfig) {
 			released += size
 		}
 		if err := m.db.Delete(rec).Error; err != nil {
-			logrus.Errorf("容量清理删除录像记录失败 id=%d: %v", rec.ID, err)
+			logrus.Errorf("capacity cleanup: failed to delete recording record id=%d: %v", rec.ID, err)
 			continue
 		}
 		count++
 	}
-
 
 	if used-released > limitBytes {
 		if orphanReleased, orphanCount := m.cleanupOrphanSegments(loc.RootPath, 5*time.Minute); orphanCount > 0 {
@@ -470,9 +452,8 @@ func (m *Manager) enforceMaxStorage(loc config.LocalStorageConfig) {
 		}
 	}
 
-	logrus.Infof("容量清理完成: 删除 %d 个录像片段, 释放约 %s", count, formatBytes(released))
+	logrus.Infof("capacity cleanup complete: deleted %d recording segments, freed approx. %s", count, formatBytes(released))
 }
-
 
 func (m *Manager) cleanupOrphanSegments(root string, protectWindow time.Duration) (int64, int) {
 	var released int64
@@ -496,13 +477,12 @@ func (m *Manager) cleanupOrphanSegments(root string, protectWindow time.Duration
 		if err := os.Remove(path); err == nil {
 			released += info.Size()
 			count++
-			logrus.Debugf("容量清理: 删除孤儿分段文件 %s", path)
+			logrus.Debugf("capacity cleanup: deleted orphan segment file %s", path)
 		}
 		return nil
 	})
 	return released, count
 }
-
 
 func dirSize(dir string) int64 {
 	var total int64
@@ -541,7 +521,6 @@ func (m *Manager) cleanupOrphanFiles() {
 
 			filePath := filepath.Join(cameraDir, f.Name())
 
-
 			var count int64
 			m.db.Model(&models.Recording{}).Where("file_path = ?", filePath).Count(&count)
 			if count == 0 {
@@ -553,7 +532,7 @@ func (m *Manager) cleanupOrphanFiles() {
 				info, _ := f.Info()
 				if time.Since(info.ModTime()) > time.Duration(loc.MaxDays)*24*time.Hour {
 					os.Remove(filePath)
-					logrus.Debugf("删除孤儿文件: %s", filePath)
+					logrus.Debugf("deleted orphan file: %s", filePath)
 				}
 			}
 		}
@@ -582,16 +561,14 @@ func (m *Manager) updateStats() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-
 	total, free, err := diskUsage(m.local().RootPath)
 	if err != nil {
-		logrus.Warnf("获取磁盘空间失败: %v", err)
+		logrus.Warnf("failed to get disk space: %v", err)
 	} else {
 		m.stats.TotalSpace = int64(total)
 		m.stats.FreeSpace = int64(free)
 		m.stats.UsedSpace = m.stats.TotalSpace - m.stats.FreeSpace
 	}
-
 
 	var recordings []models.Recording
 	m.db.Where("storage_type = 'local' AND deleted_at IS NULL").Find(&recordings)
@@ -600,7 +577,6 @@ func (m *Manager) updateStats() {
 	var snapshots []models.Snapshot
 	m.db.Where("storage_type = 'local' AND deleted_at IS NULL").Find(&snapshots)
 	m.stats.SnapshotCount = int64(len(snapshots))
-
 
 	cameraStats := make(map[uint]CameraStorageStat)
 	for _, rec := range recordings {
@@ -620,7 +596,6 @@ func (m *Manager) updateStats() {
 		cameraStats[rec.CameraID] = stat
 	}
 
-
 	var cameras []models.Camera
 	m.db.Find(&cameras)
 	for _, cam := range cameras {
@@ -638,7 +613,6 @@ func (m *Manager) GetStats() StorageStats {
 	defer m.mu.Unlock()
 	return m.stats
 }
-
 
 type RecordingManager struct {
 	db *gorm.DB
@@ -680,7 +654,6 @@ func (rm *RecordingManager) GetRecordingByID(id uint) (*models.Recording, error)
 	return &rec, err
 }
 
-
 func (rm *RecordingManager) DeleteRecording(id uint) error {
 	return rm.db.Delete(&models.Recording{}, id).Error
 }
@@ -700,7 +673,6 @@ func (rm *RecordingManager) GetLatestRecording(cameraID uint) (*models.Recording
 		Order("start_time DESC").First(&rec).Error
 	return &rec, err
 }
-
 
 type SnapshotManager struct {
 	db *gorm.DB

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/yourorg/surveillance-system/internal/config"
 	"github.com/yourorg/surveillance-system/internal/database"
 	"github.com/yourorg/surveillance-system/internal/models"
@@ -21,27 +22,23 @@ import (
 	"github.com/yourorg/surveillance-system/pkg/minio"
 	"github.com/yourorg/surveillance-system/pkg/onvif"
 	"github.com/yourorg/surveillance-system/pkg/webdav"
-	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
-
 type CameraManager struct {
-	cfg        *config.Config
-	db         *gorm.DB
-	cameras    map[uint]*CameraInstance
-	mu         sync.RWMutex
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-	ffmpegMgr  *ffmpeg.Manager
-	onvifClient *onvif.Client
+	cfg            *config.Config
+	db             *gorm.DB
+	cameras        map[uint]*CameraInstance
+	mu             sync.RWMutex
+	ctx            context.Context
+	cancel         context.CancelFunc
+	wg             sync.WaitGroup
+	ffmpegMgr      *ffmpeg.Manager
+	onvifClient    *onvif.Client
 	runtimeStorage *storage.RuntimeStorage
-
 
 	motionRecordMu   sync.Mutex
 	motionRecordLast map[uint]time.Time
-
 
 	snapMu       sync.RWMutex
 	snapEnabled  bool
@@ -49,36 +46,30 @@ type CameraManager struct {
 	snapChanged  chan struct{}
 }
 
-
 type CameraInstance struct {
-	Model       *models.Camera
-	Stream      *ffmpeg.Stream
-	Preview     *ffmpeg.PreviewStream
-	OnvifClient *onvif.Client
+	Model        *models.Camera
+	Stream       *ffmpeg.Stream
+	Preview      *ffmpeg.PreviewStream
+	OnvifClient  *onvif.Client
 	PTZSupported bool
-	Status      string
-	LastError   string
+	Status       string
+	LastError    string
 	ReconnectCnt int
-	StopChan    chan struct{}
-	loopDone    chan struct{}
-
+	StopChan     chan struct{}
+	loopDone     chan struct{}
 
 	previewLastActive time.Time
 	previewMu         sync.Mutex
-
 
 	RecordRTSPURL  string
 	PreviewRTSPURL string
 	mu             sync.Mutex
 
-
 	running bool
 }
 
-
 func NewCameraManager(cfg *config.Config, ffmpegMgr *ffmpeg.Manager) *CameraManager {
 	ctx, cancel := context.WithCancel(context.Background())
-
 
 	snapInterval := cfg.Camera.SnapshotInterval
 	if snapInterval <= 0 {
@@ -86,32 +77,29 @@ func NewCameraManager(cfg *config.Config, ffmpegMgr *ffmpeg.Manager) *CameraMana
 	}
 
 	return &CameraManager{
-		cfg:        cfg,
-		db:         database.GetDB(),
-		cameras:    make(map[uint]*CameraInstance),
-		ctx:        ctx,
-		cancel:     cancel,
-		ffmpegMgr:  ffmpegMgr,
-		onvifClient: onvif.NewClient(cfg.Camera.DiscoveryTimeout),
-		snapEnabled:  cfg.Camera.SnapshotEnabled,
-		snapInterval: snapInterval,
-		snapChanged:  make(chan struct{}, 1),
+		cfg:              cfg,
+		db:               database.GetDB(),
+		cameras:          make(map[uint]*CameraInstance),
+		ctx:              ctx,
+		cancel:           cancel,
+		ffmpegMgr:        ffmpegMgr,
+		onvifClient:      onvif.NewClient(cfg.Camera.DiscoveryTimeout),
+		snapEnabled:      cfg.Camera.SnapshotEnabled,
+		snapInterval:     snapInterval,
+		snapChanged:      make(chan struct{}, 1),
 		motionRecordLast: make(map[uint]time.Time),
 	}
 }
 
-
 func (m *CameraManager) SetRuntimeStorage(r *storage.RuntimeStorage) {
 	m.runtimeStorage = r
 }
-
 
 func (m *CameraManager) GetSnapshotSettings() (enabled bool, interval int) {
 	m.snapMu.RLock()
 	defer m.snapMu.RUnlock()
 	return m.snapEnabled, m.snapInterval
 }
-
 
 func (m *CameraManager) SetSnapshotSettings(enabled bool, interval int) {
 	if interval <= 0 {
@@ -122,13 +110,11 @@ func (m *CameraManager) SetSnapshotSettings(enabled bool, interval int) {
 	m.snapInterval = interval
 	m.snapMu.Unlock()
 
-
 	select {
 	case m.snapChanged <- struct{}{}:
 	default:
 	}
 }
-
 
 func (m *CameraManager) localStorage() config.LocalStorageConfig {
 	if m.runtimeStorage != nil {
@@ -137,14 +123,12 @@ func (m *CameraManager) localStorage() config.LocalStorageConfig {
 	return m.cfg.Storage.Local
 }
 
-
 func (m *CameraManager) webdavConfig() config.WebdavConfig {
 	if m.runtimeStorage != nil {
 		return m.runtimeStorage.GetWebdav()
 	}
 	return m.cfg.Storage.Webdav
 }
-
 
 func (m *CameraManager) minioConfig() config.MinIOConfig {
 	if m.runtimeStorage != nil {
@@ -153,13 +137,11 @@ func (m *CameraManager) minioConfig() config.MinIOConfig {
 	return m.cfg.Storage.MinIO
 }
 
-
 func (m *CameraManager) Start() error {
 
 	if err := m.loadCameras(); err != nil {
 		return err
 	}
-
 
 	for id, inst := range m.cameras {
 		if inst.Model.RecordEnabled {
@@ -168,7 +150,6 @@ func (m *CameraManager) Start() error {
 		}
 	}
 
-
 	m.wg.Add(1)
 	go m.healthCheckLoop()
 	m.wg.Add(1)
@@ -176,15 +157,13 @@ func (m *CameraManager) Start() error {
 	m.wg.Add(1)
 	go m.previewIdleLoop()
 
-	logrus.Info("摄像头管理器启动完成")
+	logrus.Info("camera manager started")
 	return nil
 }
-
 
 func (m *CameraManager) Stop() error {
 	m.cancel()
 	m.wg.Wait()
-
 
 	m.mu.Lock()
 	var streams []*ffmpeg.Stream
@@ -202,10 +181,9 @@ func (m *CameraManager) Stop() error {
 		s.Stop()
 	}
 
-	logrus.Info("摄像头管理器已停止")
+	logrus.Info("camera manager stopped")
 	return nil
 }
-
 
 func (m *CameraManager) loadCameras() error {
 	var cameras []models.Camera
@@ -222,10 +200,9 @@ func (m *CameraManager) loadCameras() error {
 			loopDone: make(chan struct{}),
 		}
 	}
-	logrus.Infof("加载了 %d 个摄像头", len(cameras))
+	logrus.Infof("loaded %d cameras", len(cameras))
 	return nil
 }
-
 
 func (m *CameraManager) runCamera(id uint) {
 	defer m.wg.Done()
@@ -241,7 +218,6 @@ func (m *CameraManager) runCamera(id uint) {
 		inst.running = false
 		inst.mu.Unlock()
 	}()
-
 
 	loopDone := inst.loopDone
 	defer func() {
@@ -262,12 +238,12 @@ func (m *CameraManager) runCamera(id uint) {
 				inst.ReconnectCnt++
 
 				if inst.ReconnectCnt >= m.cfg.Camera.MaxReconnect {
-					logrus.Errorf("摄像头 %s 达到最大重连次数，放弃重连", cam.Name)
+					logrus.Errorf("camera %s reached max reconnect attempts, giving up", cam.Name)
 					m.updateCameraStatus(cam.ID, models.CameraStatusError, err.Error())
 					return
 				}
 
-				logrus.Warnf("摄像头 %s 连接失败: %v, %d 秒后重试 (%d/%d)",
+				logrus.Warnf("camera %s connection failed: %v, retrying in %d s (%d/%d)",
 					cam.Name, err, m.cfg.Camera.ReconnectInterval, inst.ReconnectCnt, m.cfg.Camera.MaxReconnect)
 
 				select {
@@ -280,10 +256,8 @@ func (m *CameraManager) runCamera(id uint) {
 				}
 			}
 
-
 			inst.ReconnectCnt = 0
 			m.updateCameraStatus(cam.ID, models.CameraStatusOnline, "")
-
 
 			select {
 			case <-m.ctx.Done():
@@ -291,12 +265,11 @@ func (m *CameraManager) runCamera(id uint) {
 			case <-inst.StopChan:
 				return
 			case <-inst.streamDone():
-				logrus.Infof("摄像头 %s 流结束", cam.Name)
+				logrus.Infof("camera %s stream ended", cam.Name)
 			}
 		}
 	}
 }
-
 
 func (inst *CameraInstance) streamDone() <-chan struct{} {
 	if inst.Stream == nil {
@@ -305,25 +278,20 @@ func (inst *CameraInstance) streamDone() <-chan struct{} {
 	return inst.Stream.Done()
 }
 
-
 func (m *CameraManager) connectCamera(inst *CameraInstance) error {
 	cam := inst.Model
 
-
 	rtspURL := BuildRTSPURL(cam)
-
 
 	if cam.Protocol == "onvif" && (cam.Path == "" || cam.Path == "/") {
 		if cam.OnvifAddress != "" {
-			logrus.Infof("摄像头 %s 尝试通过 ONVIF 获取流地址", cam.Name)
-
+			logrus.Infof("camera %s attempting to obtain stream URL via ONVIF", cam.Name)
 
 			client := onvif.NewClient(m.cfg.Camera.DiscoveryTimeout)
 			if cam.Username != "" && cam.Password != "" {
 				client.SetCredentials(cam.Username, cam.Password)
 			}
 			inst.OnvifClient = client
-
 
 			if devInfo, derr := client.GetDeviceInfo(cam.OnvifAddress); derr == nil && devInfo != nil {
 				updates := map[string]interface{}{}
@@ -341,42 +309,38 @@ func (m *CameraManager) connectCamera(inst *CameraInstance) error {
 				}
 				if len(updates) > 0 {
 					if res := m.db.Model(cam).Updates(updates); res.Error != nil {
-						logrus.Warnf("摄像头 %s 保存 ONVIF 设备信息失败: %v", cam.Name, res.Error)
+						logrus.Warnf("camera %s failed to save ONVIF device info: %v", cam.Name, res.Error)
 					} else {
-						logrus.Infof("摄像头 %s ONVIF 设备信息: %s %s（固件 %s，串号 %s）",
+						logrus.Infof("camera %s ONVIF device info: %s %s (firmware %s, serial %s)",
 							cam.Name, devInfo.Manufacturer, devInfo.Model, devInfo.Firmware, devInfo.SerialNumber)
 					}
 				}
 			} else if derr != nil {
-				logrus.Debugf("摄像头 %s 获取 ONVIF 设备信息失败: %v", cam.Name, derr)
+				logrus.Debugf("camera %s failed to get ONVIF device info: %v", cam.Name, derr)
 			}
-
 
 			inst.PTZSupported = false
 			if caps, cerr := client.GetCapabilities(cam.OnvifAddress); cerr == nil && caps != nil && caps.PTZXAddr != "" {
 				inst.PTZSupported = true
-				logrus.Infof("摄像头 %s ONVIF 支持 PTZ 服务", cam.Name)
+				logrus.Infof("camera %s ONVIF supports PTZ service", cam.Name)
 			} else {
-				logrus.Debugf("摄像头 %s ONVIF 未提供 PTZ 服务: %v", cam.Name, cerr)
+				logrus.Debugf("camera %s ONVIF does not provide PTZ service: %v", cam.Name, cerr)
 			}
-
 
 			cacheValid := false
 			if cam.DiscoveredStreamUri != "" && cam.StreamUriUpdatedAt != nil {
 				if time.Since(*cam.StreamUriUpdatedAt) < 24*time.Hour && false {
 					rtspURL = injectRTSPAuth(cam.DiscoveredStreamUri, cam.Username, cam.Password)
 					cacheValid = true
-					logrus.Infof("摄像头 %s 使用缓存流地址: %s", cam.Name, rtspURL)
+					logrus.Infof("camera %s using cached stream URL: %s", cam.Name, rtspURL)
 				}
 			}
 
 			if !cacheValid {
 
-				logrus.Infof("摄像头 %s 缓存无效/过期/Profile 变更，重新发现流地址", cam.Name)
-
+				logrus.Infof("camera %s cached stream URL invalid/expired/profile changed, rediscovering", cam.Name)
 
 				mediaAddr := client.ResolveMediaXAddr(cam.OnvifAddress)
-
 
 				profiles, err := client.GetProfiles(mediaAddr)
 				if (err != nil || len(profiles) == 0) && mediaAddr != cam.OnvifAddress {
@@ -384,10 +348,9 @@ func (m *CameraManager) connectCamera(inst *CameraInstance) error {
 					profiles, err = client.GetProfiles(cam.OnvifAddress)
 				}
 				if err != nil {
-					logrus.Warnf("摄像头 %s 获取 ONVIF 配置失败: %v", cam.Name, err)
+					logrus.Warnf("camera %s failed to fetch ONVIF profiles: %v", cam.Name, err)
 				} else if len(profiles) > 0 {
-					logrus.Infof("摄像头 %s 发现 %d 个配置文件", cam.Name, len(profiles))
-
+					logrus.Infof("camera %s found %d profiles", cam.Name, len(profiles))
 
 					var selectedProfile onvif.Profile
 					if cam.OnvifProfileToken != "" {
@@ -401,18 +364,17 @@ func (m *CameraManager) connectCamera(inst *CameraInstance) error {
 							}
 						}
 						if !found {
-							logrus.Warnf("摄像头 %s 指定的 Profile Token %s 不存在，回退自动选择", cam.Name, cam.OnvifProfileToken)
+							logrus.Warnf("camera %s specified profile token %s not found, falling back to auto selection", cam.Name, cam.OnvifProfileToken)
 						} else {
-							logrus.Infof("摄像头 %s 使用用户指定 Profile: %s", cam.Name, selectedProfile.Name)
+							logrus.Infof("camera %s using user-specified profile: %s", cam.Name, selectedProfile.Name)
 						}
 					}
 
 					if selectedProfile.Token == "" {
 
 						selectedProfile = selectBestProfile(profiles)
-						logrus.Infof("摄像头 %s 自动选择配置文件: %s (%dx%d)", cam.Name, selectedProfile.Name, selectedProfile.Width, selectedProfile.Height)
+						logrus.Infof("camera %s auto-selected profile: %s (%dx%d)", cam.Name, selectedProfile.Name, selectedProfile.Width, selectedProfile.Height)
 					}
-
 
 					streamUri, usedProfile, err := client.GetStreamUriWithRetry(
 						mediaAddr,
@@ -422,7 +384,7 @@ func (m *CameraManager) connectCamera(inst *CameraInstance) error {
 						3,
 					)
 					if err != nil {
-						logrus.Warnf("摄像头 %s TCP 获取失败: %v，尝试 UDP", cam.Name, err)
+						logrus.Warnf("camera %s TCP fetch failed: %v, trying UDP", cam.Name, err)
 						streamUri, usedProfile, err = client.GetStreamUriWithRetry(
 							mediaAddr,
 							profiles,
@@ -431,7 +393,7 @@ func (m *CameraManager) connectCamera(inst *CameraInstance) error {
 							3,
 						)
 						if err != nil {
-							logrus.Warnf("摄像头 %s UDP 也失败: %v，使用拼接 URL", cam.Name, err)
+							logrus.Warnf("camera %s UDP also failed: %v, using constructed URL", cam.Name, err)
 						}
 					}
 
@@ -439,7 +401,6 @@ func (m *CameraManager) connectCamera(inst *CameraInstance) error {
 						rtspURL = injectRTSPAuth(streamUri, cam.Username, cam.Password)
 
 						inst.RecordRTSPURL = rtspURL
-
 
 						now := time.Now()
 						cam.DiscoveredStreamUri = streamUri
@@ -454,9 +415,8 @@ func (m *CameraManager) connectCamera(inst *CameraInstance) error {
 						if usedProfile != nil {
 							usedName = usedProfile.Name
 						}
-						logrus.Infof("摄像头 %s ONVIF 获取流地址成功 (Profile: %s): %s，已缓存",
+						logrus.Infof("camera %s ONVIF stream URL obtained (Profile: %s): %s, cached",
 							cam.Name, usedName, rtspURL)
-
 
 						if len(profiles) > 1 {
 							subProfile := selectSubProfile(profiles)
@@ -465,7 +425,7 @@ func (m *CameraManager) connectCamera(inst *CameraInstance) error {
 									mediaAddr, profiles, subProfile.Token, onvif.TransportTCP, 2,
 								); serr == nil && subUri != "" {
 									inst.PreviewRTSPURL = injectRTSPAuth(subUri, cam.Username, cam.Password)
-									logrus.Infof("摄像头 %s 子码流预览地址 (Profile: %s %dx%d): %s",
+									logrus.Infof("camera %s sub-stream preview URL (Profile: %s %dx%d): %s",
 										cam.Name, subProfile.Name, subProfile.Width, subProfile.Height, inst.PreviewRTSPURL)
 								}
 							}
@@ -474,12 +434,11 @@ func (m *CameraManager) connectCamera(inst *CameraInstance) error {
 				}
 			}
 		} else {
-			logrus.Warnf("摄像头 %s 未配置 ONVIF 地址，无法自动获取流", cam.Name)
+			logrus.Warnf("camera %s has no ONVIF address configured, cannot auto-discover stream", cam.Name)
 		}
 	}
 
-	logrus.Infof("连接摄像头 %s: %s", cam.Name, rtspURL)
-
+	logrus.Infof("connecting to camera %s: %s", cam.Name, rtspURL)
 
 	if inst.RecordRTSPURL == "" {
 		inst.RecordRTSPURL = rtspURL
@@ -490,13 +449,11 @@ func (m *CameraManager) connectCamera(inst *CameraInstance) error {
 
 	motionMode := cam.RecordType == models.RecordTypeMotion
 
-
 	if motionMode {
 		inst.setError("")
-		logrus.Infof("摄像头 %s 就绪（事件型录像模式：预览按需、移动触发时才录像）", cam.Name)
+		logrus.Infof("camera %s ready (event-based recording mode: preview on demand, recording only on motion trigger)", cam.Name)
 		return nil
 	}
-
 
 	stream, err := m.ffmpegMgr.CreateStream(inst.RecordRTSPURL, ffmpeg.StreamOptions{
 		CameraID:        cam.ID,
@@ -507,21 +464,20 @@ func (m *CameraManager) connectCamera(inst *CameraInstance) error {
 		RecordOnly:      true,
 	})
 	if err != nil {
-		return fmt.Errorf("创建录像流失败: %w", err)
+		return fmt.Errorf("failed to create recording stream: %w", err)
 	}
 
 	inst.Stream = stream
 	inst.setError("")
 
 	if err := stream.Start(); err != nil {
-		return fmt.Errorf("启动录像流失败: %w", err)
+		return fmt.Errorf("failed to start recording stream: %w", err)
 	}
 
-	logrus.Infof("摄像头 %s 录像流启动成功（主码流 -c copy，预览按需，源码流由 preview_stream 配置）", cam.Name)
+	logrus.Infof("camera %s recording stream started (main stream -c copy, preview on demand, source stream per preview_stream config)", cam.Name)
 
 	return nil
 }
-
 
 func (m *CameraManager) TriggerMotionRecording(cameraID uint) {
 	m.mu.RLock()
@@ -540,12 +496,11 @@ func (m *CameraManager) TriggerMotionRecording(cameraID uint) {
 		cooldown = 30
 	}
 
-
 	now := time.Now()
 	m.motionRecordMu.Lock()
 	if last, exists := m.motionRecordLast[cameraID]; exists && now.Sub(last) < time.Duration(cooldown)*time.Second {
 		m.motionRecordMu.Unlock()
-		logrus.Debugf("摄像头 %s 移动录像冷却中，跳过触发", inst.Model.Name)
+		logrus.Debugf("camera %s motion recording in cooldown, skipping trigger", inst.Model.Name)
 		return
 	}
 	m.motionRecordLast[cameraID] = now
@@ -559,12 +514,11 @@ func (m *CameraManager) TriggerMotionRecording(cameraID uint) {
 	go m.runMotionRecording(inst, rtspURL, duration)
 }
 
-
 func (m *CameraManager) runMotionRecording(inst *CameraInstance, rtspURL string, duration int) {
 	cam := inst.Model
 	outDir := m.getCameraStoragePath(cam.ID)
 	if err := os.MkdirAll(outDir, 0755); err != nil {
-		logrus.Errorf("创建录像目录失败 camera=%d: %v", cam.ID, err)
+		logrus.Errorf("failed to create recording directory camera=%d: %v", cam.ID, err)
 		return
 	}
 
@@ -576,7 +530,6 @@ func (m *CameraManager) runMotionRecording(inst *CameraInstance, rtspURL string,
 		"-y",
 		"-rtsp_transport", "tcp",
 
-
 		"-i", rtspURL,
 		"-c", "copy",
 		"-movflags", "+faststart",
@@ -584,42 +537,40 @@ func (m *CameraManager) runMotionRecording(inst *CameraInstance, rtspURL string,
 		outPath,
 	}
 
-	logrus.Infof("摄像头 %s 移动侦测触发录像（%d 秒）: %s", cam.Name, duration, outPath)
+	logrus.Infof("camera %s motion detection triggered recording (%d s): %s", cam.Name, duration, outPath)
 
 	cmd := exec.CommandContext(m.ctx, "ffmpeg", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil && m.ctx.Err() == nil {
-		logrus.Errorf("摄像头 %s 移动录像 ffmpeg 失败: %v (输出: %s)", cam.Name, err, tailString(string(output), 300))
+		logrus.Errorf("camera %s motion recording ffmpeg failed: %v (output: %s)", cam.Name, err, tailString(string(output), 300))
 		return
 	}
 
-
 	fi, err := os.Stat(outPath)
 	if err != nil {
-		logrus.Errorf("摄像头 %s 移动录像文件不存在: %v", cam.Name, err)
+		logrus.Errorf("camera %s motion recording file missing: %v", cam.Name, err)
 		return
 	}
 
 	endTime := time.Now()
 	recording := &models.Recording{
-		CameraID:     cam.ID,
-		StartTime:    startTime,
-		EndTime:      endTime,
-		Duration:     int(endTime.Sub(startTime).Seconds()),
-		FilePath:     outPath,
-		FileSize:     fi.Size(),
-		RecordType:   models.RecordTypeMotion,
-		Status:       "completed",
-		StorageType:  "local",
-		StoragePath:  outPath,
+		CameraID:    cam.ID,
+		StartTime:   startTime,
+		EndTime:     endTime,
+		Duration:    int(endTime.Sub(startTime).Seconds()),
+		FilePath:    outPath,
+		FileSize:    fi.Size(),
+		RecordType:  models.RecordTypeMotion,
+		Status:      "completed",
+		StorageType: "local",
+		StoragePath: outPath,
 	}
 
 	if err := m.db.Create(recording).Error; err != nil {
-		logrus.Errorf("保存移动录像记录失败 camera=%d: %v", cam.ID, err)
+		logrus.Errorf("failed to save motion recording record camera=%d: %v", cam.ID, err)
 		return
 	}
-	logrus.Infof("移动侦测录像完成: Camera=%d, File=%s, Size=%d", cam.ID, outPath, fi.Size())
-
+	logrus.Infof("motion detection recording completed: Camera=%d, File=%s, Size=%d", cam.ID, outPath, fi.Size())
 
 	if wd := m.webdavConfig(); wd.Enabled && wd.URL != "" {
 		remoteRel := fmt.Sprintf("camera_%d/%s", cam.ID, filename)
@@ -632,7 +583,6 @@ func (m *CameraManager) runMotionRecording(inst *CameraInstance, rtspURL string,
 	}
 }
 
-
 func tailString(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -640,9 +590,7 @@ func tailString(s string, n int) string {
 	return s[len(s)-n:]
 }
 
-
 func (m *CameraManager) onSegmentComplete(cameraID uint, segment *ffmpeg.SegmentInfo) {
-
 
 	filePath := segment.FilePath
 	timeStamp := segment.StartTime.Format("20060102_150405")
@@ -662,7 +610,7 @@ func (m *CameraManager) onSegmentComplete(cameraID uint, segment *ffmpeg.Segment
 	}
 	if newPath != filePath {
 		if err := os.Rename(filePath, newPath); err != nil {
-			logrus.Warnf("录像文件重命名失败（保留原名）: %v", err)
+			logrus.Warnf("failed to rename recording file (keeping original name): %v", err)
 			newPath = filePath
 		}
 	}
@@ -684,11 +632,10 @@ func (m *CameraManager) onSegmentComplete(cameraID uint, segment *ffmpeg.Segment
 	}
 
 	if err := m.db.Create(recording).Error; err != nil {
-		logrus.Errorf("保存录像记录失败: %v", err)
+		logrus.Errorf("failed to save recording record: %v", err)
 		return
 	}
-	logrus.Infof("录像分段完成: Camera=%d, File=%s, Size=%d", cameraID, segment.FilePath, segment.FileSize)
-
+	logrus.Infof("recording segment completed: Camera=%d, File=%s, Size=%d", cameraID, segment.FilePath, segment.FileSize)
 
 	if wd := m.webdavConfig(); wd.Enabled && wd.URL != "" {
 		remoteRel := fmt.Sprintf("camera_%d/%s", cameraID, filepath.Base(segment.FilePath))
@@ -701,7 +648,6 @@ func (m *CameraManager) onSegmentComplete(cameraID uint, segment *ffmpeg.Segment
 	}
 }
 
-
 func (m *CameraManager) uploadSegmentToWebdav(recordingID uint, cameraID uint, localPath string, wd config.WebdavConfig, remoteRel string) {
 	client := webdav.NewClient(wd.URL, wd.Username, wd.Password)
 	remotePath := wd.BasePath
@@ -711,38 +657,35 @@ func (m *CameraManager) uploadSegmentToWebdav(recordingID uint, cameraID uint, l
 		remotePath = remoteRel
 	}
 
-
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		if err := client.Upload(localPath, remotePath); err != nil {
 			lastErr = err
-			logrus.Warnf("WebDAV 上传重试 %d/3: camera=%d file=%s err=%v", attempt, cameraID, filepath.Base(localPath), err)
+			logrus.Warnf("WebDAV upload retry %d/3: camera=%d file=%s err=%v", attempt, cameraID, filepath.Base(localPath), err)
 			time.Sleep(time.Duration(attempt*10) * time.Second)
 			continue
 		}
 
 		m.db.Model(&models.Recording{}).Where("id = ?", recordingID).
 			Update("storage_path", remotePath)
-		logrus.Infof("WebDAV 上传成功: camera=%d -> %s", cameraID, remotePath)
-
+		logrus.Infof("WebDAV upload succeeded: camera=%d -> %s", cameraID, remotePath)
 
 		if wd.Only {
 			if err := os.Remove(localPath); err == nil {
-				logrus.Infof("WebDAV 独占模式: 已删除本地副本 %s", localPath)
+				logrus.Infof("WebDAV exclusive mode: local copy %s deleted", localPath)
 			} else if !os.IsNotExist(err) {
-				logrus.Warnf("WebDAV 独占模式: 删除本地副本失败 %s: %v", localPath, err)
+				logrus.Warnf("WebDAV exclusive mode: failed to delete local copy %s: %v", localPath, err)
 			}
 		}
 		return
 	}
-	logrus.Errorf("WebDAV 上传失败（已重试 3 次）: camera=%d file=%s err=%v", cameraID, filepath.Base(localPath), lastErr)
+	logrus.Errorf("WebDAV upload failed (retried 3 times): camera=%d file=%s err=%v", cameraID, filepath.Base(localPath), lastErr)
 }
-
 
 func (m *CameraManager) uploadSegmentToMinio(recordingID uint, cameraID uint, localPath string, mn config.MinIOConfig, remoteRel string) {
 	client, err := minio.NewClient(mn.Endpoint, mn.AccessKey, mn.SecretKey, mn.Bucket, mn.UseSSL)
 	if err != nil {
-		logrus.Errorf("MinIO 创建客户端失败: camera=%d err=%v", cameraID, err)
+		logrus.Errorf("MinIO client creation failed: camera=%d err=%v", cameraID, err)
 		return
 	}
 	objectKey := mn.BasePath
@@ -752,12 +695,11 @@ func (m *CameraManager) uploadSegmentToMinio(recordingID uint, cameraID uint, lo
 		objectKey = remoteRel
 	}
 
-
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		if err := client.Upload(localPath, objectKey); err != nil {
 			lastErr = err
-			logrus.Warnf("MinIO 上传重试 %d/3: camera=%d file=%s err=%v", attempt, cameraID, filepath.Base(localPath), err)
+			logrus.Warnf("MinIO upload retry %d/3: camera=%d file=%s err=%v", attempt, cameraID, filepath.Base(localPath), err)
 			time.Sleep(time.Duration(attempt*10) * time.Second)
 			continue
 		}
@@ -766,46 +708,41 @@ func (m *CameraManager) uploadSegmentToMinio(recordingID uint, cameraID uint, lo
 			Where("id = ? AND storage_path = ?", recordingID, localPath).
 			Update("storage_path", objectKey)
 		if res.Error != nil {
-			logrus.Warnf("MinIO 回写 storage_path 失败 id=%d: %v", recordingID, res.Error)
+			logrus.Warnf("MinIO storage_path write-back failed id=%d: %v", recordingID, res.Error)
 		} else {
-			logrus.Infof("MinIO 上传成功: camera=%d -> %s/%s", cameraID, mn.Bucket, objectKey)
+			logrus.Infof("MinIO upload succeeded: camera=%d -> %s/%s", cameraID, mn.Bucket, objectKey)
 		}
-
 
 		if mn.Only {
 			wd := m.webdavConfig()
 			if !(wd.Enabled && wd.Only) {
 				if err := os.Remove(localPath); err == nil {
-					logrus.Infof("MinIO 独占模式: 已删除本地副本 %s", localPath)
+					logrus.Infof("MinIO exclusive mode: local copy %s deleted", localPath)
 				} else if !os.IsNotExist(err) {
-					logrus.Warnf("MinIO 独占模式: 删除本地副本失败 %s: %v", localPath, err)
+					logrus.Warnf("MinIO exclusive mode: failed to delete local copy %s: %v", localPath, err)
 				}
 			}
 		}
 		return
 	}
-	logrus.Errorf("MinIO 上传失败（已重试 3 次）: camera=%d file=%s err=%v", cameraID, filepath.Base(localPath), lastErr)
+	logrus.Errorf("MinIO upload failed (retried 3 times): camera=%d file=%s err=%v", cameraID, filepath.Base(localPath), lastErr)
 }
-
 
 func (m *CameraManager) getCameraStoragePath(cameraID uint) string {
 	return fmt.Sprintf("%s/camera_%d", m.localStorage().RootPath, cameraID)
 }
-
 
 func (m *CameraManager) Snapshot(cameraID uint) (string, error) {
 	m.mu.RLock()
 	inst, ok := m.cameras[cameraID]
 	m.mu.RUnlock()
 	if !ok || inst == nil {
-		return "", fmt.Errorf("摄像头不存在")
+		return "", fmt.Errorf("camera not found")
 	}
-
 
 	if inst.Stream != nil && inst.Stream.IsRunning() {
 		return inst.Stream.Snapshot()
 	}
-
 
 	rtspURL := inst.RecordRTSPURL
 	if rtspURL == "" {
@@ -824,31 +761,28 @@ func (m *CameraManager) Snapshot(cameraID uint) (string, error) {
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-y", "-rtsp_transport", "tcp", "-i", rtspURL, "-vframes", "1", "-q:v", "2", snapshotPath)
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("抓拍失败: %w", err)
+		return "", fmt.Errorf("snapshot failed: %w", err)
 	}
 	return snapshotPath, nil
 }
 
-
 const previewIdleTimeout = 30 * time.Second
-
 
 func (m *CameraManager) EnsurePreview(cameraID uint, src string) error {
 	m.mu.RLock()
 	inst, ok := m.cameras[cameraID]
 	m.mu.RUnlock()
 	if !ok || inst == nil {
-		return fmt.Errorf("摄像头不存在")
+		return fmt.Errorf("camera not found")
 	}
 	if !inst.Model.RecordEnabled {
-		return fmt.Errorf("摄像头未启用")
+		return fmt.Errorf("camera is not enabled")
 	}
 
 	src = m.NormalizePreviewSrc(src)
 
 	inst.previewMu.Lock()
 	defer inst.previewMu.Unlock()
-
 
 	if inst.Preview != nil && inst.Preview.IsRunning() {
 		if inst.Preview.Src == src {
@@ -859,9 +793,8 @@ func (m *CameraManager) EnsurePreview(cameraID uint, src string) error {
 		inst.Preview = nil
 
 		old.Stop()
-		logrus.Infof("摄像头 %s 预览码流切换: %s → %s", inst.Model.Name, old.Src, src)
+		logrus.Infof("camera %s preview stream switched: %s -> %s", inst.Model.Name, old.Src, src)
 	}
-
 
 	var rtspURL string
 	if src == "sub" {
@@ -884,13 +817,12 @@ func (m *CameraManager) EnsurePreview(cameraID uint, src string) error {
 	inst.Preview.Src = src
 	if err := inst.Preview.Start(); err != nil {
 		inst.Preview = nil
-		return fmt.Errorf("启动预览流失败: %w", err)
+		return fmt.Errorf("failed to start preview stream: %w", err)
 	}
 	inst.previewLastActive = time.Now()
-	logrus.Infof("摄像头 %s 预览流按需启动（%s: %s）", inst.Model.Name, src, rtspURL)
+	logrus.Infof("camera %s preview stream started on demand (%s: %s)", inst.Model.Name, src, rtspURL)
 	return nil
 }
-
 
 func (m *CameraManager) NormalizePreviewSrc(src string) string {
 	switch strings.ToLower(src) {
@@ -903,7 +835,6 @@ func (m *CameraManager) NormalizePreviewSrc(src string) string {
 		return "main"
 	}
 }
-
 
 func (m *CameraManager) TouchPreview(cameraID uint) {
 	m.mu.RLock()
@@ -919,7 +850,6 @@ func (m *CameraManager) TouchPreview(cameraID uint) {
 	inst.previewMu.Unlock()
 }
 
-
 func (m *CameraManager) stopIdlePreviews() {
 	m.mu.RLock()
 	instances := make([]*CameraInstance, 0, len(m.cameras))
@@ -932,7 +862,7 @@ func (m *CameraManager) stopIdlePreviews() {
 	for _, inst := range instances {
 		inst.previewMu.Lock()
 		if inst.Preview != nil && inst.Preview.IsRunning() && now.Sub(inst.previewLastActive) > previewIdleTimeout {
-			logrus.Infof("摄像头 %s 预览流空闲 %s，自动停止以回收内存", inst.Model.Name, previewIdleTimeout)
+			logrus.Infof("camera %s preview stream idle %s, stopping automatically to reclaim memory", inst.Model.Name, previewIdleTimeout)
 			p := inst.Preview
 			inst.Preview = nil
 			p.Stop()
@@ -940,7 +870,6 @@ func (m *CameraManager) stopIdlePreviews() {
 		inst.previewMu.Unlock()
 	}
 }
-
 
 func (m *CameraManager) previewIdleLoop() {
 	defer m.wg.Done()
@@ -955,7 +884,6 @@ func (m *CameraManager) previewIdleLoop() {
 		}
 	}
 }
-
 
 func (m *CameraManager) healthCheckLoop() {
 	defer m.wg.Done()
@@ -978,13 +906,12 @@ func (m *CameraManager) checkCamerasHealth() {
 
 	for id, inst := range m.cameras {
 		if inst.Stream != nil && !inst.Stream.IsHealthy() {
-			logrus.Warnf("摄像头 %d 流不健康（数据流中断），触发重连", id)
+			logrus.Warnf("camera %d stream unhealthy (data stream interrupted), triggering reconnect", id)
 
 			inst.Stream.Restart()
 		}
 	}
 }
-
 
 func (m *CameraManager) snapshotLoop() {
 	defer m.wg.Done()
@@ -1027,7 +954,7 @@ func (m *CameraManager) takeSnapshots() {
 		go func(inst *CameraInstance) {
 			path, err := m.Snapshot(inst.Model.ID)
 			if err != nil {
-				logrus.Errorf("摄像头 %d 抓拍失败: %v", inst.Model.ID, err)
+				logrus.Errorf("camera %d snapshot failed: %v", inst.Model.ID, err)
 				return
 			}
 
@@ -1040,12 +967,11 @@ func (m *CameraManager) takeSnapshots() {
 				StorageType: "local",
 			}
 			if err := m.db.Create(snapshot).Error; err != nil {
-				logrus.Errorf("保存抓拍记录失败: %v", err)
+				logrus.Errorf("failed to save snapshot record: %v", err)
 			}
 		}(inst)
 	}
 }
-
 
 func (m *CameraManager) GetCamera(id uint) (*models.Camera, error) {
 	var cam models.Camera
@@ -1055,13 +981,11 @@ func (m *CameraManager) GetCamera(id uint) (*models.Camera, error) {
 	return &cam, nil
 }
 
-
 func (m *CameraManager) ListCameras() ([]models.Camera, error) {
 	var cameras []models.Camera
 	err := m.db.Where("deleted_at IS NULL").Order("id ASC").Find(&cameras).Error
 	return cameras, err
 }
-
 
 func (m *CameraManager) SaveSnapshot(cameraID uint, path string, fileType string) error {
 	snapshot := &models.Snapshot{
@@ -1074,7 +998,6 @@ func (m *CameraManager) SaveSnapshot(cameraID uint, path string, fileType string
 	}
 	return m.db.Create(snapshot).Error
 }
-
 
 func (m *CameraManager) ListSnapshots(cameraID uint, page, pageSize int) ([]models.Snapshot, int64, error) {
 	if page < 1 {
@@ -1094,7 +1017,6 @@ func (m *CameraManager) ListSnapshots(cameraID uint, page, pageSize int) ([]mode
 		Find(&snaps).Error
 	return snaps, total, err
 }
-
 
 func cloneCamera(cam *models.Camera) *models.Camera {
 	c := *cam
@@ -1116,12 +1038,10 @@ func cloneCamera(cam *models.Camera) *models.Camera {
 	return &c
 }
 
-
 func (m *CameraManager) CreateCamera(cam *models.Camera) error {
 	if err := m.db.Create(cam).Error; err != nil {
 		return err
 	}
-
 
 	inst := &CameraInstance{
 		Model:    cloneCamera(cam),
@@ -1133,14 +1053,12 @@ func (m *CameraManager) CreateCamera(cam *models.Camera) error {
 	m.cameras[cam.ID] = inst
 	m.mu.Unlock()
 
-
 	if cam.RecordEnabled {
 		m.wg.Add(1)
 		go m.runCamera(cam.ID)
 	}
 	return nil
 }
-
 
 func (m *CameraManager) UpdateCamera(cam *models.Camera) error {
 	if err := m.db.Save(cam).Error; err != nil {
@@ -1164,16 +1082,15 @@ func (m *CameraManager) UpdateCamera(cam *models.Camera) error {
 	}
 	if needStop {
 		if err := m.StopCamera(cam.ID); err != nil {
-			logrus.Warnf("停止摄像头 %d 流失败: %v", cam.ID, err)
+			logrus.Warnf("failed to stop camera %d stream: %v", cam.ID, err)
 		}
 	} else if needStart {
 		if err := m.StartCamera(cam.ID); err != nil {
-			logrus.Warnf("启动摄像头 %d 流失败: %v", cam.ID, err)
+			logrus.Warnf("failed to start camera %d stream: %v", cam.ID, err)
 		}
 	}
 	return nil
 }
-
 
 func (m *CameraManager) DeleteCamera(id uint) error {
 	m.mu.Lock()
@@ -1185,14 +1102,12 @@ func (m *CameraManager) DeleteCamera(id uint) error {
 	}
 	m.mu.Unlock()
 
-
 	if stream != nil {
 		stream.Stop()
 	}
 
 	return m.db.Delete(&models.Camera{}, id).Error
 }
-
 
 func (m *CameraManager) GetCameraStatus(id uint) (*CameraInstance, bool) {
 	m.mu.RLock()
@@ -1201,11 +1116,10 @@ func (m *CameraManager) GetCameraStatus(id uint) (*CameraInstance, bool) {
 	return inst, ok
 }
 
-
 func (m *CameraManager) StartCamera(id uint) error {
 	cam, err := m.GetCamera(id)
 	if err != nil {
-		return fmt.Errorf("摄像头不存在")
+		return fmt.Errorf("camera not found")
 	}
 	m.mu.Lock()
 	inst, ok := m.cameras[id]
@@ -1228,22 +1142,20 @@ func (m *CameraManager) StartCamera(id uint) error {
 
 	m.wg.Add(1)
 	go m.runCamera(id)
-	logrus.Infof("启动摄像头 %d 的流", id)
+	logrus.Infof("starting stream for camera %d", id)
 	return nil
 }
-
 
 func (m *CameraManager) StopCamera(id uint) error {
 	m.mu.Lock()
 	inst, ok := m.cameras[id]
 	if !ok {
 		m.mu.Unlock()
-		return fmt.Errorf("摄像头不存在")
+		return fmt.Errorf("camera not found")
 	}
 	loopDone := inst.loopDone
 	stream, preview := inst.stop()
 	m.mu.Unlock()
-
 
 	if stream != nil {
 		stream.Stop()
@@ -1252,18 +1164,16 @@ func (m *CameraManager) StopCamera(id uint) error {
 		preview.Stop()
 	}
 
-
 	if loopDone != nil {
 		select {
 		case <-loopDone:
 		case <-time.After(15 * time.Second):
-			logrus.Warnf("摄像头 %d 运行循环未能在 15 秒内退出", id)
+			logrus.Warnf("camera %d run loop did not exit within 15 s", id)
 		}
 	}
-	logrus.Infof("已停止摄像头 %d 的流", id)
+	logrus.Infof("stopped stream for camera %d", id)
 	return nil
 }
-
 
 func (m *CameraManager) RestartCamera(id uint) error {
 	if err := m.StopCamera(id); err != nil {
@@ -1272,11 +1182,9 @@ func (m *CameraManager) RestartCamera(id uint) error {
 	return m.StartCamera(id)
 }
 
-
 func (m *CameraManager) DiscoverONVIFCameras(network string) ([]*onvif.DeviceInfo, error) {
 	return m.onvifClient.Discover(network)
 }
-
 
 func (m *CameraManager) ProbeONVIFCamera(ip, username, password string) (*onvif.DeviceInfo, error) {
 	client := onvif.NewClient(10)
@@ -1288,15 +1196,13 @@ func (m *CameraManager) ProbeONVIFCamera(ip, username, password string) (*onvif.
 		return device, nil
 	}
 	if authRequired {
-		return nil, fmt.Errorf("检测到 ONVIF 设备，但需要认证：请提供正确的用户名/密码（若未填写凭据请先补充）")
+		return nil, fmt.Errorf("ONVIF device detected, but authentication is required: please provide the correct username/password (add credentials if missing)")
 	}
-	return nil, fmt.Errorf("未发现 ONVIF 设备（设备可能离线、未开启 ONVIF 服务，或 IP 地址不正确）")
+	return nil, fmt.Errorf("no ONVIF device found (the device may be offline, the ONVIF service may be disabled, or the IP address may be incorrect)")
 }
-
 
 func (m *CameraManager) DiscoverLAN(timeoutSec int) ([]*onvif.DeviceInfo, error) {
 	client := onvif.NewClient(timeoutSec)
-
 
 	wsWindow := timeoutSec * 2 / 5
 	if wsWindow <= 0 {
@@ -1309,7 +1215,6 @@ func (m *CameraManager) DiscoverLAN(timeoutSec int) ([]*onvif.DeviceInfo, error)
 		return devices, nil
 	}
 
-
 	sweepWindow := time.Duration(timeoutSec) * time.Second
 	if sweepWindow < 5*time.Second {
 		sweepWindow = 5 * time.Second
@@ -1319,18 +1224,16 @@ func (m *CameraManager) DiscoverLAN(timeoutSec int) ([]*onvif.DeviceInfo, error)
 		return nil, err
 	}
 	if len(devices) == 0 {
-		return nil, fmt.Errorf("未在局域网内发现 ONVIF 设备：请确认摄像头已开启 ONVIF 服务，并与本机处于同一网段")
+		return nil, fmt.Errorf("no ONVIF device found on the LAN: make sure the camera has its ONVIF service enabled and is on the same network segment as this host")
 	}
 	return devices, nil
 }
 
-
 var (
-	ErrCameraNotFound  = errors.New("摄像头不存在")
-	ErrCameraOffline   = errors.New("摄像头未连接")
-	ErrPTZNotSupported = errors.New("摄像头不支持 PTZ")
+	ErrCameraNotFound  = errors.New("camera not found")
+	ErrCameraOffline   = errors.New("camera not connected")
+	ErrPTZNotSupported = errors.New("camera does not support PTZ")
 )
-
 
 func (m *CameraManager) PTZControl(cameraID uint, command string, speed float64) error {
 	m.mu.RLock()
@@ -1347,13 +1250,11 @@ func (m *CameraManager) PTZControl(cameraID uint, command string, speed float64)
 		return ErrCameraOffline
 	}
 
-
 	if inst.OnvifClient != nil {
 		return inst.OnvifClient.PTZControl(inst.Model.OnvifAddress, command, speed)
 	}
 	return m.onvifClient.PTZControl(inst.Model.OnvifAddress, command, speed)
 }
-
 
 func (m *CameraManager) PTZCapability(cameraID uint) *bool {
 	m.mu.RLock()
@@ -1366,11 +1267,10 @@ func (m *CameraManager) PTZCapability(cameraID uint) *bool {
 	return &supported
 }
 
-
 func (m *CameraManager) updateCameraStatus(id uint, status, errMsg string) {
 	m.db.Model(&models.Camera{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"status":     status,
-		"error_msg":  errMsg,
+		"status":      status,
+		"error_msg":   errMsg,
 		"last_online": func() *time.Time { t := time.Now(); return &t }(),
 	})
 
@@ -1381,7 +1281,6 @@ func (m *CameraManager) updateCameraStatus(id uint, status, errMsg string) {
 	}
 	m.mu.RUnlock()
 }
-
 
 func (inst *CameraInstance) stop() (*ffmpeg.Stream, *ffmpeg.PreviewStream) {
 	inst.mu.Lock()
@@ -1396,7 +1295,6 @@ func (inst *CameraInstance) stop() (*ffmpeg.Stream, *ffmpeg.PreviewStream) {
 
 	stream := inst.Stream
 	inst.Stream = nil
-
 
 	preview := inst.Preview
 	inst.Preview = nil
@@ -1414,12 +1312,10 @@ func (inst *CameraInstance) setError(err string) {
 	}
 }
 
-
 func selectBestProfile(profiles []onvif.Profile) onvif.Profile {
 	if len(profiles) == 1 {
 		return profiles[0]
 	}
-
 
 	bestIdx := 0
 	bestScore := -1
@@ -1427,9 +1323,7 @@ func selectBestProfile(profiles []onvif.Profile) onvif.Profile {
 	for i, p := range profiles {
 		score := 0
 
-
 		score += p.Width * p.Height / 10000
-
 
 		name := strings.ToLower(p.Name)
 		if strings.Contains(name, "main") || strings.Contains(name, "primary") || strings.Contains(name, "high") {
@@ -1438,7 +1332,6 @@ func selectBestProfile(profiles []onvif.Profile) onvif.Profile {
 		if strings.Contains(name, "sub") || strings.Contains(name, "secondary") || strings.Contains(name, "low") {
 			score -= 500
 		}
-
 
 		if p.Codec == "h264" || p.Codec == "h265" {
 			score += 100
@@ -1452,7 +1345,6 @@ func selectBestProfile(profiles []onvif.Profile) onvif.Profile {
 
 	return profiles[bestIdx]
 }
-
 
 func selectSubProfile(profiles []onvif.Profile) onvif.Profile {
 	if len(profiles) == 0 {
@@ -1485,7 +1377,6 @@ func selectSubProfile(profiles []onvif.Profile) onvif.Profile {
 	return profiles[bestIdx]
 }
 
-
 func injectRTSPAuth(rtspURL, username, password string) string {
 	if username == "" || rtspURL == "" {
 		return rtspURL
@@ -1512,7 +1403,6 @@ func injectRTSPAuth(rtspURL, username, password string) string {
 	idx := strings.Index(rtspURL, "://")
 	return rtspURL[:idx+3] + auth + "@" + rtspURL[idx+3:]
 }
-
 
 func BuildRTSPURL(c *models.Camera) string {
 	auth := ""

@@ -6,7 +6,6 @@ import (
 	"github.com/yourorg/surveillance-system/internal/config"
 )
 
-
 type RuntimeStorage struct {
 	mu     sync.RWMutex
 	local  config.LocalStorageConfig

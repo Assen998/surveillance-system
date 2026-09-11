@@ -1,5 +1,3 @@
-
-
 package minio
 
 import (
@@ -15,12 +13,10 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-
 type Client struct {
 	client *minio.Client
 	bucket string
 }
-
 
 type Entry struct {
 	Key     string    `json:"key"`
@@ -28,43 +24,39 @@ type Entry struct {
 	ModTime time.Time `json:"mod_time"`
 }
 
-
 func NewClient(endpoint, accessKey, secretKey, bucket string, useSSL bool) (*Client, error) {
 	mc, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
 		Secure: useSSL,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("创建 MinIO 客户端失败: %w", err)
+		return nil, fmt.Errorf("failed to create MinIO client: %w", err)
 	}
 	return &Client{client: mc, bucket: bucket}, nil
 }
 
-
 func (c *Client) EnsureBucket(ctx context.Context) error {
 	exists, err := c.client.BucketExists(ctx, c.bucket)
 	if err != nil {
-		return fmt.Errorf("检查 bucket 失败: %w", err)
+		return fmt.Errorf("failed to check bucket: %w", err)
 	}
 	if !exists {
 		if err := c.client.MakeBucket(ctx, c.bucket, minio.MakeBucketOptions{}); err != nil {
-			return fmt.Errorf("创建 bucket 失败: %w", err)
+			return fmt.Errorf("failed to create bucket: %w", err)
 		}
 	}
 	return nil
 }
-
 
 func (c *Client) Upload(localPath, objectKey string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	_, err := c.client.FPutObject(ctx, c.bucket, objectKey, localPath, minio.PutObjectOptions{})
 	if err != nil {
-		return fmt.Errorf("上传失败: %w", err)
+		return fmt.Errorf("upload failed: %w", err)
 	}
 	return nil
 }
-
 
 func (c *Client) Stat(objectKey string) (size int64, modTime time.Time, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -76,13 +68,11 @@ func (c *Client) Stat(objectKey string) (size int64, modTime time.Time, err erro
 	return info.Size, info.LastModified, nil
 }
 
-
 func (c *Client) Delete(objectKey string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	return c.client.RemoveObject(ctx, c.bucket, objectKey, minio.RemoveObjectOptions{})
 }
-
 
 func (c *Client) List(prefix string) ([]Entry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -93,7 +83,7 @@ func (c *Client) List(prefix string) ([]Entry, error) {
 	objCh := c.client.ListObjects(ctx, c.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true})
 	for obj := range objCh {
 		if obj.Err != nil {
-			return nil, fmt.Errorf("列对象失败: %w", obj.Err)
+			return nil, fmt.Errorf("failed to list objects: %w", obj.Err)
 		}
 		if strings.HasSuffix(obj.Key, "/") {
 			continue
@@ -102,7 +92,6 @@ func (c *Client) List(prefix string) ([]Entry, error) {
 	}
 	return entries, nil
 }
-
 
 type GetResult struct {
 	Body       io.ReadCloser
@@ -122,7 +111,7 @@ func (c *Client) Get(ctx context.Context, objectKey, rangeHeader string) (*GetRe
 		s, e, ok := parseRange(rangeHeader, size)
 		if ok {
 			if err := opts.SetRange(s, e); err != nil {
-				return nil, fmt.Errorf("解析 Range 失败: %w", err)
+				return nil, fmt.Errorf("failed to parse Range: %w", err)
 			}
 			start, end = s, e
 		}
@@ -134,7 +123,6 @@ func (c *Client) Get(ctx context.Context, objectKey, rangeHeader string) (*GetRe
 	}
 	return &GetResult{Body: rc, TotalSize: size, Start: start, End: end}, nil
 }
-
 
 func parseRange(rangeHeader string, total int64) (start, end int64, ok bool) {
 	v := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(rangeHeader), "bytes="))
@@ -174,7 +162,6 @@ func parseRange(rangeHeader string, total int64) (start, end int64, ok bool) {
 	}
 }
 
-
 func (c *Client) TestAndUpload(basePath string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -191,18 +178,18 @@ func (c *Client) TestAndUpload(basePath string) error {
 
 	payload := []byte(fmt.Sprintf("surveillance-system minio connect test %d", time.Now().Unix()))
 	if _, err := c.client.PutObject(ctx, c.bucket, key, bytes.NewReader(payload), int64(len(payload)), minio.PutObjectOptions{}); err != nil {
-		return fmt.Errorf("写入测试对象失败: %w", err)
+		return fmt.Errorf("failed to write test object: %w", err)
 	}
 	defer c.client.RemoveObject(ctx, c.bucket, key, minio.RemoveObjectOptions{})
 
 	rc, err := c.client.GetObject(ctx, c.bucket, key, minio.GetObjectOptions{})
 	if err != nil {
-		return fmt.Errorf("读取测试对象失败: %w", err)
+		return fmt.Errorf("failed to read test object: %w", err)
 	}
 	defer rc.Close()
 	got, err := io.ReadAll(rc)
 	if err != nil || string(got) != string(payload) {
-		return fmt.Errorf("读取测试对象校验失败: %v", err)
+		return fmt.Errorf("test object read verification failed: %v", err)
 	}
 	return nil
 }

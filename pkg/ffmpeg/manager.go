@@ -24,15 +24,13 @@ type Manager struct {
 }
 
 type StreamOptions struct {
-	CameraID       uint
+	CameraID        uint
 	SegmentDuration int
-	OutputDir      string
-	OnSegment      func(cameraID uint, segment *SegmentInfo)
-	OnError        func(error)
-
+	OutputDir       string
+	OnSegment       func(cameraID uint, segment *SegmentInfo)
+	OnError         func(error)
 
 	NoRecord bool
-
 
 	RecordOnly bool
 }
@@ -51,25 +49,23 @@ type Stream struct {
 	stderrTail bytes.Buffer
 	stderrMu   sync.Mutex
 
-
 	runStartTime  time.Time
 	runCounter    int
 	processedSegs map[string]bool
 	processedMu   sync.Mutex
 	csvWatcher    chan struct{}
 
-
 	restartRequested bool
 }
 
 type SegmentInfo struct {
-	Index      int
-	StartTime  time.Time
-	EndTime    time.Time
-	FilePath   string
-	FileSize   int64
-	IndexPath  string
-	Duration   float64
+	Index     int
+	StartTime time.Time
+	EndTime   time.Time
+	FilePath  string
+	FileSize  int64
+	IndexPath string
+	Duration  float64
 }
 
 func NewManager() *Manager {
@@ -81,7 +77,7 @@ func NewManager() *Manager {
 func (m *Manager) CreateStream(rtspURL string, opts StreamOptions) (*Stream, error) {
 
 	if err := os.MkdirAll(opts.OutputDir, 0755); err != nil {
-		return nil, fmt.Errorf("创建输出目录失败: %w", err)
+		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -107,7 +103,7 @@ func (s *Stream) Start() error {
 	defer s.mu.Unlock()
 
 	if s.running {
-		return fmt.Errorf("流已在运行")
+		return fmt.Errorf("stream already running")
 	}
 
 	s.startTime = time.Now()
@@ -134,7 +130,7 @@ func (s *Stream) run() {
 				if s.ctx.Err() == context.Canceled {
 					return
 				}
-				logrus.Errorf("摄像头 %d 录像分段错误: %v", s.opts.CameraID, err)
+				logrus.Errorf("camera %d recording segment error: %v", s.opts.CameraID, err)
 				if s.opts.OnError != nil {
 					s.opts.OnError(err)
 				}
@@ -162,11 +158,9 @@ func (s *Stream) runSegment() error {
 	hlsSegmentFile := filepath.Join(s.opts.OutputDir, "hls_segment_%03d.ts")
 	hlsPlaylist := filepath.Join(s.opts.OutputDir, "index.m3u8")
 
-
 	args := []string{
 		"-y",
 		"-rtsp_transport", "tcp",
-
 
 		"-i", "INPUT_URL_PLACEHOLDER",
 	}
@@ -189,7 +183,6 @@ func (s *Stream) runSegment() error {
 		)
 	}
 
-
 	if !s.opts.RecordOnly {
 		args = append(args,
 			"-map", "0:v:0",
@@ -210,7 +203,6 @@ func (s *Stream) runSegment() error {
 		)
 	}
 
-
 	for i, arg := range args {
 		if arg == "INPUT_URL_PLACEHOLDER" {
 			args[i] = s.getRTSPURL()
@@ -222,25 +214,20 @@ func (s *Stream) runSegment() error {
 	s.cmd = exec.CommandContext(s.ctx, "ffmpeg", args...)
 	s.mu.Unlock()
 
-
 	stderr, _ := s.cmd.StderrPipe()
 	stdout, _ := s.cmd.StdoutPipe()
 
 	if err := s.cmd.Start(); err != nil {
-		return fmt.Errorf("启动 ffmpeg 失败: %w", err)
+		return fmt.Errorf("failed to start ffmpeg: %w", err)
 	}
-
 
 	go s.readOutput(stderr, "stderr")
 	go s.readOutput(stdout, "stdout")
 
-
 	s.startCSVWatcher(indexFile)
-
 
 	err := s.cmd.Wait()
 	s.stopCSVWatcher()
-
 
 	s.mu.Lock()
 	wasRestart := s.restartRequested
@@ -253,15 +240,13 @@ func (s *Stream) runSegment() error {
 			s.processCSVNewLines(indexFile)
 			return nil
 		}
-		return fmt.Errorf("ffmpeg 退出异常: %w (stderr 尾部: %s)", err, s.stderrTailString())
+		return fmt.Errorf("ffmpeg exited abnormally: %w (stderr tail: %s)", err, s.stderrTailString())
 	}
-
 
 	s.processCSVNewLines(indexFile)
 
 	return nil
 }
-
 
 func (s *Stream) startCSVWatcher(indexFile string) {
 	if s.csvWatcher != nil {
@@ -284,14 +269,12 @@ func (s *Stream) startCSVWatcher(indexFile string) {
 	}()
 }
 
-
 func (s *Stream) stopCSVWatcher() {
 	if s.csvWatcher != nil {
 		close(s.csvWatcher)
 		s.csvWatcher = nil
 	}
 }
-
 
 func (s *Stream) processCSVNewLines(indexFile string) {
 	data, err := os.ReadFile(indexFile)
@@ -311,7 +294,6 @@ func (s *Stream) processCSVNewLines(indexFile string) {
 		if !strings.HasSuffix(f, ".mp4") {
 			continue
 		}
-
 
 		s.processedMu.Lock()
 		if s.processedSegs[f] {
@@ -359,7 +341,6 @@ func (s *Stream) processCSVNewLines(indexFile string) {
 	}
 }
 
-
 func isInterrupted(err error) bool {
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
@@ -401,13 +382,11 @@ func (s *Stream) readOutput(pipe interface{}, prefix string) {
 	}
 }
 
-
 func (s *Stream) stderrTailString() string {
 	s.stderrMu.Lock()
 	defer s.stderrMu.Unlock()
 	return strings.TrimSpace(s.stderrTail.String())
 }
-
 
 func (s *Stream) Stop() error {
 	s.mu.Lock()
@@ -421,13 +400,11 @@ func (s *Stream) Stop() error {
 	}
 	s.mu.Unlock()
 
-
 	s.cancel()
 	if proc != nil {
 
 		proc.Signal(os.Interrupt)
 	}
-
 
 	select {
 	case <-s.doneChan:
@@ -439,12 +416,11 @@ func (s *Stream) Stop() error {
 		select {
 		case <-s.doneChan:
 		case <-time.After(10 * time.Second):
-			logrus.Warnf("流 %d 未能在超时内退出", s.opts.CameraID)
+			logrus.Warnf("stream %d did not exit within timeout", s.opts.CameraID)
 		}
 	}
 	return nil
 }
-
 
 func (s *Stream) Restart() {
 	s.mu.Lock()
@@ -470,7 +446,6 @@ func (s *Stream) IsRunning() bool {
 	return s.running
 }
 
-
 func (s *Stream) IsHealthy() bool {
 	s.mu.Lock()
 	running := s.running
@@ -481,7 +456,6 @@ func (s *Stream) IsHealthy() bool {
 	if !running {
 		return false
 	}
-
 
 	gracePeriod := 30 * time.Second
 
@@ -501,7 +475,6 @@ func (s *Stream) IsHealthy() bool {
 	}
 	return time.Since(info.ModTime()) < 60*time.Second
 }
-
 
 func (s *Stream) newestSegmentModTime(outDir string) time.Time {
 	entries, err := os.ReadDir(outDir)
@@ -538,7 +511,7 @@ func (s *Stream) Snapshot() (string, error) {
 	s.mu.Unlock()
 
 	if !running {
-		return "", fmt.Errorf("流未运行")
+		return "", fmt.Errorf("stream not running")
 	}
 
 	snapshotPath := filepath.Join(outDir, fmt.Sprintf("snapshot_%d_%d.jpg", cameraID, time.Now().Unix()))
@@ -557,15 +530,14 @@ func (s *Stream) Snapshot() (string, error) {
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("抓拍失败: %w", err)
+			return "", fmt.Errorf("snapshot failed: %w", err)
 		}
 		return snapshotPath, nil
 	}
 
-
 	hlsPlaylist := filepath.Join(outDir, "index.m3u8")
 	if _, err := os.Stat(hlsPlaylist); err != nil {
-		return "", fmt.Errorf("HLS 播放列表不存在，预览流尚未就绪")
+		return "", fmt.Errorf("HLS playlist does not exist, preview stream is not ready yet")
 	}
 
 	args := []string{
@@ -578,12 +550,11 @@ func (s *Stream) Snapshot() (string, error) {
 
 	cmd := exec.CommandContext(context.Background(), "ffmpeg", args...)
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("抓拍失败: %w", err)
+		return "", fmt.Errorf("snapshot failed: %w", err)
 	}
 
 	return snapshotPath, nil
 }
-
 
 func (m *Manager) GetStream(cameraID uint) (*Stream, bool) {
 	m.mu.RLock()
@@ -591,7 +562,6 @@ func (m *Manager) GetStream(cameraID uint) (*Stream, bool) {
 	s, ok := m.streams[cameraID]
 	return s, ok
 }
-
 
 func (m *Manager) StopAll() {
 	m.mu.Lock()
@@ -602,7 +572,6 @@ func (m *Manager) StopAll() {
 	}
 	m.streams = make(map[uint]*Stream)
 }
-
 
 func ProbeStream(rtspURL string) (*StreamInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -619,9 +588,8 @@ func ProbeStream(rtspURL string) (*StreamInfo, error) {
 
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("ffprobe 失败: %w", err)
+		return nil, fmt.Errorf("ffprobe failed: %w", err)
 	}
-
 
 	info := &StreamInfo{}
 
@@ -639,14 +607,13 @@ type StreamInfo struct {
 	Duration float64
 }
 
-
 type HLSTranscoder struct {
-	cameraID   uint
-	rtspURL    string
-	outputDir  string
-	cmd        *exec.Cmd
-	ctx        context.Context
-	cancel     context.CancelFunc
+	cameraID  uint
+	rtspURL   string
+	outputDir string
+	cmd       *exec.Cmd
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 func NewHLSTranscoder(cameraID uint, rtspURL, outputDir string) *HLSTranscoder {
@@ -694,7 +661,6 @@ func (h *HLSTranscoder) Stop() error {
 	return nil
 }
 
-
 type PreviewStream struct {
 	cameraID  uint
 	rtspURL   string
@@ -706,7 +672,6 @@ type PreviewStream struct {
 	running   bool
 	startTime time.Time
 	mu        sync.Mutex
-
 
 	Src string
 }
@@ -723,7 +688,6 @@ func NewPreviewStream(cameraID uint, rtspURL, outputDir string) *PreviewStream {
 	}
 }
 
-
 func (p *PreviewStream) Start() error {
 	p.mu.Lock()
 	if p.running {
@@ -734,7 +698,6 @@ func (p *PreviewStream) Start() error {
 		p.mu.Unlock()
 		return err
 	}
-
 
 	startSeq := p.nextStartSequence()
 	p.removeHLSFiles(p.listHLSFiles())
@@ -760,7 +723,6 @@ func (p *PreviewStream) Start() error {
 		"-hls_segment_filename", filepath.Join(p.outputDir, "hls_segment_%03d.ts"),
 	}
 
-
 	if startSeq > 0 {
 		args = append(args, "-start_number", strconv.Itoa(startSeq))
 	}
@@ -775,7 +737,6 @@ func (p *PreviewStream) Start() error {
 	p.startTime = time.Now()
 	p.mu.Unlock()
 
-
 	go func() {
 		p.cmd.Wait()
 		p.mu.Lock()
@@ -785,7 +746,6 @@ func (p *PreviewStream) Start() error {
 	}()
 	return nil
 }
-
 
 func (p *PreviewStream) Stop() {
 	p.mu.Lock()
@@ -800,7 +760,6 @@ func (p *PreviewStream) Stop() {
 		return
 	}
 
-
 	stale := p.listHLSFiles()
 	p.cancel()
 	if proc != nil {
@@ -811,9 +770,7 @@ func (p *PreviewStream) Stop() {
 	case <-time.After(5 * time.Second):
 	}
 
-
 	p.removeHLSFiles(stale)
-
 
 	if maxSeq := maxHLSSequenceFromNames(stale); maxSeq >= 0 {
 		os.WriteFile(filepath.Join(p.outputDir, hlsSeqStateFile), []byte(strconv.Itoa(maxSeq)), 0644)
@@ -825,7 +782,6 @@ func (p *PreviewStream) IsRunning() bool {
 	defer p.mu.Unlock()
 	return p.running
 }
-
 
 func (p *PreviewStream) listHLSFiles() []string {
 	entries, err := os.ReadDir(p.outputDir)
@@ -845,9 +801,7 @@ func (p *PreviewStream) listHLSFiles() []string {
 	return names
 }
 
-
 const hlsSeqStateFile = ".hls_last_seq"
-
 
 func (p *PreviewStream) nextStartSequence() int {
 	last := -1
@@ -861,7 +815,6 @@ func (p *PreviewStream) nextStartSequence() int {
 	}
 	return last + 1
 }
-
 
 func maxHLSSequenceFromNames(names []string) int {
 	max := -1
@@ -879,7 +832,7 @@ func maxHLSSequenceFromNames(names []string) int {
 func (p *PreviewStream) removeHLSFiles(names []string) {
 	for _, name := range names {
 		if os.Remove(filepath.Join(p.outputDir, name)) == nil {
-			logrus.Debugf("预览流 camera=%d 清理残留 HLS 文件: %s", p.cameraID, name)
+			logrus.Debugf("preview stream camera=%d removing leftover HLS file: %s", p.cameraID, name)
 		}
 	}
 }
@@ -887,7 +840,6 @@ func (p *PreviewStream) removeHLSFiles(names []string) {
 func (p *PreviewStream) Done() <-chan struct{} {
 	return p.doneChan
 }
-
 
 func (p *PreviewStream) IsHealthy() bool {
 	p.mu.Lock()

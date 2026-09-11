@@ -104,7 +104,27 @@ sudo dnf install -y ffmpeg
 
 > 如果 FFmpeg 缺失或目录不可写，服务仍可启动，但浏览器首次设置页与「系统维护 → 运行环境检测」会明确列出缺失项与修复命令。
 
-### 方式一：下载发行版（推荐，无需编译）
+### 方式一：systemd 一键安装（Linux 服务器推荐）
+
+克隆仓库后运行安装脚本（**脚本会先询问选择中文 / English**）：
+
+```bash
+git clone https://github.com/Assen998/surveillance-system.git
+cd surveillance-system
+sudo bash deployments/deploy.sh        # 自动下载当前平台的最新 Release 资产
+# 本地二进制安装：
+sudo bash deployments/deploy.sh /path/to/surveillance-server
+# 卸载（数据保留，彻底删除需手动 rm -rf /opt/surveillance）：
+sudo bash deployments/deploy.sh --uninstall
+```
+
+- 自动识别架构（amd64 / arm64 / armv7），下载最新 Release 中对应的资产包
+- 安装到 `/opt/surveillance`；首次安装自动生成 `config.yaml`，**已有配置始终保留、不覆盖**
+- 自动创建 `surveillance` systemd 服务：开机自启、崩溃自动重启
+- 无法直连 GitHub 时通过代理下载：`http_proxy=... https_proxy=... sudo bash deployments/deploy.sh`
+- 非交互（管道/CI）运行自动按系统语言选择；可用 `DEPLOY_LANG=zh|en` 强制指定
+
+### 方式二：下载发行版（无需编译）
 
 到 [GitHub Releases](https://github.com/Assen998/surveillance-system/releases) 下载对应平台压缩包（如 `surveillance-system-1.5.0-linux-arm64.tar.gz`）。解压后得到一个**不带版本号的稳定目录**（如 `surveillance-system-linux-arm64/`）：
 
@@ -119,7 +139,7 @@ cd surveillance-system-linux-arm64
 ./surveillance-server        # 自动读取同目录 config.yaml
 ```
 
-### 方式二：源码构建
+### 方式三：源码构建
 
 前端构建产物通过 Go 的 `go:embed` 直接嵌入后端二进制，最终产出**单个可执行文件**：
 
@@ -418,20 +438,18 @@ update:
 
 ## 🐳 Docker 部署
 
-部署脚本与编排文件位于 `deployments/`，包含主应用、Redis、MinIO、PostgreSQL、Nginx、Prometheus、Grafana 等可选服务。
+部署文件位于 `deployments/`。除主应用外，MinIO（对象存储）与 Nginx（HTTPS 反代）通过 compose profile 可选启用：
 
 ```bash
 cd deployments
-./deploy.sh start      # 启动所有服务
-./deploy.sh stop       # 停止
-./deploy.sh restart    # 重启
-./deploy.sh logs       # 查看日志
-./deploy.sh status     # 状态
-./deploy.sh backup     # 备份
-./deploy.sh restore    # 恢复
+docker compose up -d                          # 仅主应用
+docker compose --profile minio up -d          # + MinIO（9000 API / 9001 控制台）
+docker compose --profile nginx up -d          # + Nginx（需先准备 deployments/ssl/ 证书）
 ```
 
-> 当前版本默认无需 Redis / MinIO / PostgreSQL 即可运行，相关服务为可选扩展。
+数据持久化在 `surveillance-data` / `surveillance-recordings` / `surveillance-logs` 三个命名卷中，容器内路径 `/app/data`、`/app/recordings`、`/app/logs`。
+
+> 系统默认无需 Redis / PostgreSQL 即可运行（SQLite 纯 Go 驱动）；MinIO 仅在配置了对象存储时才需要。
 
 ---
 
@@ -465,7 +483,7 @@ surveillance-system/
 │       ├── router/         # 路由配置
 │       └── components/     # 通用组件（EnvCheckTable 等）
 ├── configs/config.yaml     # 配置文件
-└── deployments/            # 部署相关（Docker）
+└── deployments/            # 部署（systemd 一键安装 + Docker）
 ```
 
 ### 关键流程

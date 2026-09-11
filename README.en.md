@@ -106,7 +106,27 @@ sudo dnf install -y ffmpeg
 
 > If FFmpeg is missing or directories are not writable, the server still starts — the first-run setup page and "Maintenance → Environment Check" will list the missing items with exact fix commands.
 
-### Option 1: Download a Release (recommended, no build needed)
+### Option 1: systemd One-Click Install (recommended for Linux servers)
+
+Clone the repository and run the installer (**the script first asks you to choose 简体中文 / English**):
+
+```bash
+git clone https://github.com/Assen998/surveillance-system.git
+cd surveillance-system
+sudo bash deployments/deploy.sh        # auto-downloads the latest release asset for your platform
+# Install a local binary instead:
+sudo bash deployments/deploy.sh /path/to/surveillance-server
+# Uninstall (data is kept; remove /opt/surveillance manually to wipe it):
+sudo bash deployments/deploy.sh --uninstall
+```
+
+- Auto-detects the architecture (amd64 / arm64 / armv7) and downloads the matching latest-release asset
+- Installs to `/opt/surveillance`; generates `config.yaml` on first install — **an existing config is always preserved, never overwritten**
+- Creates the `surveillance` systemd service: starts on boot, auto-restarts on crash
+- If GitHub is not reachable directly, download via a proxy: `http_proxy=... https_proxy=... sudo bash deployments/deploy.sh`
+- Non-interactive (piped/CI) runs auto-detect the system locale; force a language with `DEPLOY_LANG=zh|en`
+
+### Option 2: Download a Release (no build needed)
 
 Grab the archive for your platform from [GitHub Releases](https://github.com/Assen998/surveillance-system/releases) (e.g. `surveillance-system-1.5.0-linux-arm64.tar.gz`). It extracts to a **version-less stable directory** (e.g. `surveillance-system-linux-arm64/`):
 
@@ -121,7 +141,7 @@ cd surveillance-system-linux-arm64
 ./surveillance-server        # auto-loads config.yaml in the same directory
 ```
 
-### Option 2: Build from Source
+### Option 3: Build from Source
 
 The frontend build is embedded into the backend binary via Go's `go:embed`, producing a **single executable**:
 
@@ -420,20 +440,18 @@ Base prefix `/api/v1`. Everything except login and first-run setup requires `Aut
 
 ## 🐳 Docker Deployment
 
-Deployment scripts and compose files live in `deployments/`, including the main app plus optional Redis, MinIO, PostgreSQL, Nginx, Prometheus, and Grafana services.
+Deployment files live in `deployments/`. Besides the main app, MinIO (object storage) and Nginx (HTTPS reverse proxy) are optional, enabled via compose profiles:
 
 ```bash
 cd deployments
-./deploy.sh start      # start all services
-./deploy.sh stop       # stop
-./deploy.sh restart    # restart
-./deploy.sh logs       # view logs
-./deploy.sh status     # status
-./deploy.sh backup     # backup
-./deploy.sh restore    # restore
+docker compose up -d                          # main app only
+docker compose --profile minio up -d          # + MinIO (9000 API / 9001 console)
+docker compose --profile nginx up -d          # + Nginx (prepare deployments/ssl/ certs first)
 ```
 
-> The current release runs without Redis / MinIO / PostgreSQL; those services are optional extras.
+Data is persisted in the named volumes `surveillance-data` / `surveillance-recordings` / `surveillance-logs`, mounted at `/app/data`, `/app/recordings`, `/app/logs` inside the container.
+
+> The system runs out of the box without Redis / PostgreSQL (pure-Go SQLite driver); MinIO is only needed when object storage is configured.
 
 ---
 
@@ -467,7 +485,7 @@ surveillance-system/
 │       ├── router/         # routes
 │       └── components/     # shared components (EnvCheckTable, etc.)
 ├── configs/config.yaml     # configuration
-└── deployments/            # deployment (Docker)
+└── deployments/            # deployment (systemd one-click installer + Docker)
 ```
 
 ### Key Flows

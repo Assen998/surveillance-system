@@ -108,7 +108,13 @@ sudo dnf install -y ffmpeg
 
 ### Option 1: systemd One-Click Install (recommended for Linux servers)
 
-Clone the repository and run the installer (**the script first asks you to choose 简体中文 / English**):
+**One-liner install** (no clone needed; the script first asks for the language, then for the ports on first install):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Assen998/surveillance-system/main/deployments/deploy.sh | sudo bash
+```
+
+Or clone the repository and run it (same effect, convenient for inspecting the script):
 
 ```bash
 git clone https://github.com/Assen998/surveillance-system.git
@@ -124,7 +130,7 @@ sudo bash deployments/deploy.sh --uninstall
 - **Custom ports on first install**: the script prompts for the HTTP port (default `8080`) and WebSocket port (default `8081`), validates them (range + not already in use) and writes them into the generated `config.yaml`; with an existing config it asks nothing and changes nothing
 - Installs to `/opt/surveillance`; generates `config.yaml` on first install — **an existing config is always preserved, never overwritten**
 - Creates the `surveillance` systemd service: starts on boot, auto-restarts on crash
-- If GitHub is not reachable directly, download via a proxy: `http_proxy=... https_proxy=... sudo bash deployments/deploy.sh`
+- If GitHub is not reachable directly, download via a proxy: `sudo env http_proxy=http://192.168.1.5:7890 https_proxy=http://192.168.1.5:7890 bash deployments/deploy.sh` (for the one-liner, prefix `curl` with the same `http_proxy=...`)
 - Non-interactive (piped/CI) runs auto-detect the system locale; force a language with `DEPLOY_LANG=zh|en`; ports can be set with `SURVEILLANCE_HTTP_PORT` / `SURVEILLANCE_WS_PORT`
 
 ### Option 2: Download a Release (no build needed)

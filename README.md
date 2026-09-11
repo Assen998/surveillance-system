@@ -106,7 +106,13 @@ sudo dnf install -y ffmpeg
 
 ### 方式一：systemd 一键安装（Linux 服务器推荐）
 
-克隆仓库后运行安装脚本（**脚本会先询问选择中文 / English**）：
+**一行式安装**（无需克隆仓库；启动前会先询问选择语言，首次安装再询问端口）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Assen998/surveillance-system/main/deployments/deploy.sh | sudo bash
+```
+
+或克隆仓库后运行（效果相同，便于查看脚本）：
 
 ```bash
 git clone https://github.com/Assen998/surveillance-system.git
@@ -122,7 +128,7 @@ sudo bash deployments/deploy.sh --uninstall
 - **首次安装时可自定义端口**：脚本依次询问 HTTP 端口（默认 `8080`）与 WebSocket 端口（默认 `8081`），带合法性与占用检查，写入生成的 `config.yaml`；已有配置时不询问、不改动
 - 安装到 `/opt/surveillance`；首次安装自动生成 `config.yaml`，**已有配置始终保留、不覆盖**
 - 自动创建 `surveillance` systemd 服务：开机自启、崩溃自动重启
-- 无法直连 GitHub 时通过代理下载：`http_proxy=... https_proxy=... sudo bash deployments/deploy.sh`
+- 无法直连 GitHub 时通过代理下载：`sudo env http_proxy=http://192.168.1.5:7890 https_proxy=http://192.168.1.5:7890 bash deployments/deploy.sh`（一行式同理，`curl` 前加同样的 `http_proxy=...` 即可）
 - 非交互（管道/CI）运行自动按系统语言选择；可用 `DEPLOY_LANG=zh|en` 强制指定；端口可用 `SURVEILLANCE_HTTP_PORT` / `SURVEILLANCE_WS_PORT` 指定
 
 ### 方式二：下载发行版（无需编译）

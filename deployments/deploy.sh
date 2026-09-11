@@ -4,10 +4,13 @@
 # 监控录像系统一键安装脚本（Linux，systemd + 单文件二进制）
 #
 # Usage / 用法:
-#   sudo bash deployments/deploy.sh [local binary path]
-#   sudo bash deployments/deploy.sh [本地二进制路径]
-#     - no arg: auto-download latest asset from GitHub Releases
-#     - with arg: install the given local binary
+#   一行式安装（无需克隆仓库）:
+#     curl -fsSL https://raw.githubusercontent.com/Assen998/surveillance-system/main/deployments/deploy.sh | sudo bash
+#   克隆仓库后运行:
+#     git clone https://github.com/Assen998/surveillance-system.git && cd surveillance-system
+#     sudo bash deployments/deploy.sh [local binary path / 本地二进制路径]
+#       - no arg: auto-download latest asset from GitHub Releases
+#       - with arg: install the given local binary
 #   sudo bash deployments/deploy.sh --uninstall
 #
 # Install locations / 安装位置:
@@ -37,7 +40,7 @@ T() {
     case "$LANG_CODE" in
         en)
             case "$key" in
-                need_root)      text="Please run as root: sudo bash $0" ;;
+                need_root)      text="Please run as root, e.g.: %s" ;;
                 uninstall_done) text="Service stopped and removed. Data kept in $INSTALL_DIR (rm -rf it manually to delete completely)" ;;
                 no_ffmpeg)      text="ffmpeg not found (required for streaming/recording/preview)" ;;
                 ffmpeg_deb)     text="Debian/Armbian: sudo apt update && sudo apt install -y ffmpeg" ;;
@@ -72,7 +75,7 @@ T() {
             esac ;;
         *)
             case "$key" in
-                need_root)      text="请用 root 运行: sudo bash $0" ;;
+                need_root)      text="请用 root 运行，例如: %s" ;;
                 uninstall_done) text="已停止并移除 systemd 服务。数据保留在 $INSTALL_DIR（如需彻底删除请手动 rm -rf $INSTALL_DIR）" ;;
                 no_ffmpeg)      text="未找到 ffmpeg（拉流/录像/预览必需）" ;;
                 ffmpeg_deb)     text="Debian/Armbian: sudo apt update && sudo apt install -y ffmpeg" ;;
@@ -117,10 +120,26 @@ detect_lang() {
     esac
 }
 
+# ---------- 输入通道 ----------
+# 支持 `curl ... | sudo bash`：此时 bash 的 stdin 是脚本本身，
+# 用户输入必须从 /dev/tty 读取；无控制终端（cron/ssh -T）时不提问、用默认值。
+HAVE_TTY=0
+if ( : </dev/tty ) 2>/dev/null; then HAVE_TTY=1; fi
+
+# ask "<prompt>" → 答案存入 REPLY（非交互时 REPLY 为空）
+ask() {
+    local prompt="$1"
+    REPLY=""
+    if (( HAVE_TTY )); then
+        printf "%s" "$prompt"
+        IFS= read -r REPLY </dev/tty || REPLY=""
+    fi
+}
+
 # ---------- 启动前选择语言 / Language selection ----------
 if [[ -n "${DEPLOY_LANG:-}" ]]; then
     LANG_CODE="$DEPLOY_LANG"
-elif [[ ! -t 0 ]]; then
+elif (( ! HAVE_TTY )); then
     LANG_CODE=$(detect_lang)
 else
     echo ""
@@ -128,9 +147,8 @@ else
     echo "  --------------------------------------------------"
     echo "    1) 简体中文"
     echo "    2) English"
-    echo -n "  选择语言 / Select language [1]: "
-    read -r choice || choice="1"
-    case "$choice" in
+    ask "  选择语言 / Select language [1]: "
+    case "$REPLY" in
         2|en|EN|English|english) LANG_CODE="en" ;;
         *) LANG_CODE="zh" ;;
     esac
@@ -141,7 +159,14 @@ log_info()    { echo -e "${YELLOW}[INFO]${NC} $(T "$@")"; }
 log_success() { echo -e "${GREEN}[OK]${NC} $(T "$@")"; }
 log_error()   { echo -e "${RED}[ERROR]${NC} $(T "$@")"; }
 
-[[ $EUID -ne 0 ]] && { log_error need_root; exit 1; }
+if [[ $EUID -ne 0 ]]; then
+    if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+        log_error need_root "sudo bash $0"
+    else
+        log_error need_root "curl -fsSL https://raw.githubusercontent.com/$REPO/main/deployments/deploy.sh | sudo bash"
+    fi
+    exit 1
+fi
 
 # ---------- 卸载 / uninstall ----------
 if [[ "${1:-}" == "--uninstall" ]]; then
@@ -217,14 +242,12 @@ port_in_use()    { command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | awk '{
 if [[ ! -f "$INSTALL_DIR/configs/config.yaml" ]]; then
     HTTP_PORT="${SURVEILLANCE_HTTP_PORT:-8080}"
     WS_PORT="${SURVEILLANCE_WS_PORT:-8081}"
-    if [[ -t 0 ]]; then
+    if (( HAVE_TTY )); then
         for _attempt in 1 2 3; do
-            echo -n "  $(T port_http)"
-            read -r INPUT || INPUT=""
-            [[ -n "$INPUT" ]] && HTTP_PORT="$INPUT"
-            echo -n "  $(T port_ws)"
-            read -r INPUT || INPUT=""
-            [[ -n "$INPUT" ]] && WS_PORT="$INPUT"
+            ask "  $(T port_http)"
+            [[ -n "$REPLY" ]] && HTTP_PORT="$REPLY"
+            ask "  $(T port_ws)"
+            [[ -n "$REPLY" ]] && WS_PORT="$REPLY"
             ERRS=()
             port_format_ok "$HTTP_PORT" || ERRS+=("$(T port_invalid "$HTTP_PORT")")
             port_format_ok "$WS_PORT"   || ERRS+=("$(T port_invalid "$WS_PORT")")
@@ -250,8 +273,13 @@ mkdir -p "$INSTALL_DIR/configs" "$INSTALL_DIR/data" "$INSTALL_DIR/recordings" "$
 if [[ -f "$INSTALL_DIR/configs/config.yaml" ]]; then
     log_info keep_cfg
 else
-    REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-    if [[ -f "$REPO_ROOT/configs/config.yaml" ]]; then
+    # 配置来源优先级：源码 configs/ > 资产包内 config.yaml > 内置默认值
+    # （curl | bash 管道运行时 BASH_SOURCE 无效，自动落到资产包配置）
+    REPO_ROOT=""
+    if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+        REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || REPO_ROOT=""
+    fi
+    if [[ -n "$REPO_ROOT" && -f "$REPO_ROOT/configs/config.yaml" ]]; then
         cp "$REPO_ROOT/configs/config.yaml" "$INSTALL_DIR/configs/config.yaml"
     elif [[ -n "${ASSET_CONFIG:-}" && -f "$ASSET_CONFIG" ]]; then
         cp "$ASSET_CONFIG" "$INSTALL_DIR/configs/config.yaml"

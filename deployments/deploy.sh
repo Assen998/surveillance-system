@@ -56,9 +56,15 @@ T() {
                 install_to)     text="Installing to %s ..." ;;
                 keep_cfg)       text="Existing config found, keeping current config.yaml (not overwritten)" ;;
                 gen_cfg)        text="Generated default config %s" ;;
+                port_http)      text="HTTP port [8080]: " ;;
+                port_ws)        text="WebSocket port [8081]: " ;;
+                port_invalid)   text="Invalid port: %s (must be a number between 1 and 65535)" ;;
+                port_in_use)    text="Port %s is already in use on this machine, please choose another" ;;
+                port_same)      text="HTTP and WebSocket ports must be different" ;;
+                ports_chosen)   text="Using HTTP port %s, WebSocket port %s" ;;
                 start_fail)     text="Service failed to start, check logs: journalctl -u $SERVICE_NAME -n 50" ;;
                 done)           text="Installation complete, service started" ;;
-                web_url)        text="Web console: http://%s:8080" ;;
+                web_url)        text="Web console: http://%s:%s" ;;
                 hints)          text="Common commands:" ;;
                 hint_status)    text="  status:     systemctl status $SERVICE_NAME" ;;
                 hint_logs)      text="  logs:       journalctl -u $SERVICE_NAME -f   (or tail -f $INSTALL_DIR/logs/surveillance.log)" ;;
@@ -85,9 +91,15 @@ T() {
                 install_to)     text="安装到 %s ..." ;;
                 keep_cfg)       text="检测到已有配置，保留原 config.yaml（不覆盖）" ;;
                 gen_cfg)        text="已生成默认配置 %s" ;;
+                port_http)      text="HTTP 端口号 [8080]: " ;;
+                port_ws)        text="WebSocket 端口号 [8081]: " ;;
+                port_invalid)   text="无效端口: %s（应为 1-65535 的数字）" ;;
+                port_in_use)    text="端口 %s 已被本机占用，请更换" ;;
+                port_same)      text="HTTP 与 WebSocket 端口不能相同" ;;
+                ports_chosen)   text="使用 HTTP 端口 %s，WebSocket 端口 %s" ;;
                 start_fail)     text="服务启动失败，请查看日志: journalctl -u $SERVICE_NAME -n 50" ;;
                 done)           text="安装完成，服务已启动" ;;
-                web_url)        text="Web 控制台: http://%s:8080" ;;
+                web_url)        text="Web 控制台: http://%s:%s" ;;
                 hints)          text="常用命令:" ;;
                 hint_status)    text="  查看状态   systemctl status $SERVICE_NAME" ;;
                 hint_logs)      text="  查看日志   journalctl -u $SERVICE_NAME -f   或 tail -f $INSTALL_DIR/logs/surveillance.log" ;;
@@ -197,6 +209,40 @@ else
     BINARY="$PKG_DIR/surveillance-server"
 fi
 
+# ---------- 端口选择（仅首次安装生成配置时）----------
+# 默认 8080/8081；交互运行会询问，非交互可用 SURVEILLANCE_HTTP_PORT / SURVEILLANCE_WS_PORT 覆盖
+port_format_ok() { [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 )); }
+port_in_use()    { command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${1}$"; }
+
+if [[ ! -f "$INSTALL_DIR/configs/config.yaml" ]]; then
+    HTTP_PORT="${SURVEILLANCE_HTTP_PORT:-8080}"
+    WS_PORT="${SURVEILLANCE_WS_PORT:-8081}"
+    if [[ -t 0 ]]; then
+        for _attempt in 1 2 3; do
+            echo -n "  $(T port_http)"
+            read -r INPUT || INPUT=""
+            [[ -n "$INPUT" ]] && HTTP_PORT="$INPUT"
+            echo -n "  $(T port_ws)"
+            read -r INPUT || INPUT=""
+            [[ -n "$INPUT" ]] && WS_PORT="$INPUT"
+            ERRS=()
+            port_format_ok "$HTTP_PORT" || ERRS+=("$(T port_invalid "$HTTP_PORT")")
+            port_format_ok "$WS_PORT"   || ERRS+=("$(T port_invalid "$WS_PORT")")
+            port_format_ok "$HTTP_PORT" && port_in_use "$HTTP_PORT" && ERRS+=("$(T port_in_use "$HTTP_PORT")")
+            port_format_ok "$WS_PORT"   && port_in_use "$WS_PORT"   && ERRS+=("$(T port_in_use "$WS_PORT")")
+            [[ "$HTTP_PORT" == "$WS_PORT" ]] && ERRS+=("$(T port_same)")
+            if (( ${#ERRS[@]} == 0 )); then break; fi
+            for e in "${ERRS[@]}"; do log_error "$e"; done
+            if [[ "$_attempt" -eq 3 ]]; then exit 1; fi
+        done
+    else
+        port_format_ok "$HTTP_PORT" || { log_error port_invalid "$HTTP_PORT"; exit 1; }
+        port_format_ok "$WS_PORT"   || { log_error port_invalid "$WS_PORT"; exit 1; }
+        [[ "$HTTP_PORT" == "$WS_PORT" ]] && { log_error port_same; exit 1; }
+    fi
+    log_info ports_chosen "$HTTP_PORT" "$WS_PORT"
+fi
+
 # ---------- 安装 / install ----------
 log_info install_to "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/configs" "$INSTALL_DIR/data" "$INSTALL_DIR/recordings" "$INSTALL_DIR/logs"
@@ -255,6 +301,10 @@ update:
     proxy: ""
 EOF
     fi
+    # 写入用户选择的端口
+    sed -i -E -e "s|^([[:space:]]*http_port:)[[:space:]]*[0-9]+|\1 ${HTTP_PORT}|" \
+              -e "s|^([[:space:]]*ws_port:)[[:space:]]*[0-9]+|\1 ${WS_PORT}|" \
+              "$INSTALL_DIR/configs/config.yaml"
     log_info gen_cfg "$INSTALL_DIR/configs/config.yaml"
 fi
 
@@ -291,8 +341,12 @@ systemctl restart "$SERVICE_NAME"
 
 sleep 2
 if systemctl is-active --quiet "$SERVICE_NAME"; then
+    # 已有配置时从 config.yaml 读取实际端口
+    if [[ -z "${HTTP_PORT:-}" && -f "$INSTALL_DIR/configs/config.yaml" ]]; then
+        HTTP_PORT=$(grep -E '^[[:space:]]*http_port:' "$INSTALL_DIR/configs/config.yaml" | grep -oE '[0-9]+' | head -1)
+    fi
     log_success done
-    log_success web_url "$(hostname -I 2>/dev/null | awk '{print $1}' || echo 127.0.0.1)"
+    log_success web_url "$(hostname -I 2>/dev/null | awk '{print $1}' || echo 127.0.0.1)" "${HTTP_PORT:-8080}"
     log_info hints
     log_info hint_status
     log_info hint_logs

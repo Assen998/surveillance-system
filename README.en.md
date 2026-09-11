@@ -121,10 +121,11 @@ sudo bash deployments/deploy.sh --uninstall
 ```
 
 - Auto-detects the architecture (amd64 / arm64 / armv7) and downloads the matching latest-release asset
+- **Custom ports on first install**: the script prompts for the HTTP port (default `8080`) and WebSocket port (default `8081`), validates them (range + not already in use) and writes them into the generated `config.yaml`; with an existing config it asks nothing and changes nothing
 - Installs to `/opt/surveillance`; generates `config.yaml` on first install — **an existing config is always preserved, never overwritten**
 - Creates the `surveillance` systemd service: starts on boot, auto-restarts on crash
 - If GitHub is not reachable directly, download via a proxy: `http_proxy=... https_proxy=... sudo bash deployments/deploy.sh`
-- Non-interactive (piped/CI) runs auto-detect the system locale; force a language with `DEPLOY_LANG=zh|en`
+- Non-interactive (piped/CI) runs auto-detect the system locale; force a language with `DEPLOY_LANG=zh|en`; ports can be set with `SURVEILLANCE_HTTP_PORT` / `SURVEILLANCE_WS_PORT`
 
 ### Option 2: Download a Release (no build needed)
 

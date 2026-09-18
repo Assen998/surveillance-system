@@ -883,11 +883,14 @@ func (m *CameraManager) EnsurePreview(cameraID uint, src string) error {
 		inst.Preview.OnHWFallback = func() {
 			inst.mu.Lock()
 			inst.hwFailed = true
+			running := inst.running
 			inst.mu.Unlock()
-			logrus.Warnf("camera %s hw codec stream died shortly after start, falling back to software codec (until camera restart or hw setting toggle)", inst.Model.Name)
-			// 立即用软编解码重试，用户无感
-			if err := m.EnsurePreview(cameraID, src); err != nil {
-				logrus.Warnf("camera %s software preview restart failed: %v", inst.Model.Name, err)
+			logrus.Warnf("camera %s hw codec preview failed, falling back to software codec (until camera restart or hw setting toggle)", inst.Model.Name)
+			// 立即用软编解码重试（仅当摄像头仍在运行，避免复活已停止的摄像头）
+			if running {
+				if err := m.EnsurePreview(cameraID, src); err != nil {
+					logrus.Warnf("camera %s software preview restart failed: %v", inst.Model.Name, err)
+				}
 			}
 		}
 	}

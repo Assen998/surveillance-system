@@ -723,8 +723,27 @@ type PreviewStream struct {
 	EncodeArgs []string // 编码参数（整体替换 libx264 块）
 	// OnHWFallback 硬件路径启动后短时间内自行退出（未被 Stop）时调用，
 	// 由 camera 服务标记回退并立即用软编解码重启
-	OnHWFallback func()
-	stopped      atomic.Bool
+	OnHWFallback  func()
+	stopped       atomic.Bool
+	fallbackFired atomic.Bool
+}
+
+// 硬件路径看门狗：启动后 15s 仍无 HLS 播放列表输出 → 判定硬件路径挂死
+// （Amlogic 等 SoC 上 V4L2 M2M 设备可能打开后无输出，ffmpeg 进程不退出）
+var hwWatchdogTimeout = 15 * time.Second
+
+// fireFallback 确保回退回调最多触发一次（进程退出监控与看门狗共用）
+func (p *PreviewStream) fireFallback(reason string) {
+	if !p.fallbackFired.CompareAndSwap(false, true) {
+		return
+	}
+	p.mu.Lock()
+	cb := p.OnHWFallback
+	p.mu.Unlock()
+	if cb != nil {
+		logrus.Warnf("preview camera=%d: %s, falling back to software codec", p.cameraID, reason)
+		cb()
+	}
 }
 
 func NewPreviewStream(cameraID uint, rtspURL, outputDir string) *PreviewStream {
@@ -792,30 +811,55 @@ func (p *PreviewStream) Start() error {
 		p.mu.Unlock()
 		return err
 	}
+	usedHW := len(p.DecodeArgs) > 0 || len(p.EncodeArgs) > 0
 	p.stopped.Store(false)
+	p.fallbackFired.Store(false)
 	p.running = true
 	p.startTime = time.Now()
 	p.mu.Unlock()
 
+	// 进程退出监控：硬件路径进程退出且非主动 Stop → 回退软编解码
 	go func() {
 		p.cmd.Wait()
 		p.mu.Lock()
-		usedHW := len(p.DecodeArgs) > 0 || len(p.EncodeArgs) > 0
-		elapsed := time.Since(p.startTime)
-		cb := p.OnHWFallback
 		p.running = false
 		p.mu.Unlock()
 		close(p.doneChan)
-		// 硬件路径启动后短时间内自行退出且非主动 Stop → 判定硬件不可用，
-		// 通知 camera 服务回退软编解码（避免反复用硬件参数重试）
-		if usedHW && !p.stopped.Load() && elapsed < 15*time.Second && cb != nil {
-			cb()
+		if usedHW && !p.stopped.Load() {
+			p.fireFallback("hw codec process exited unexpectedly")
 		}
 	}()
+
+	// 看门狗：硬件路径启动后 15s 仍无 HLS 输出 → 强制结束并回退
+	// （覆盖进程挂死场景：VPU 设备打开成功但无数据输出，Wait 永不返回）
+	if usedHW {
+		go func() {
+			time.Sleep(hwWatchdogTimeout)
+			p.mu.Lock()
+			if !p.running {
+				p.mu.Unlock()
+				return
+			}
+			p.stopped.Store(true) // 抑制监控回调，由看门狗统一处理
+			p.mu.Unlock()
+			if _, err := os.Stat(filepath.Join(p.outputDir, "index.m3u8")); err == nil {
+				return // 播放列表已产出，硬件路径正常
+			}
+			if p.cmd.Process != nil {
+				_ = p.cmd.Process.Kill()
+			}
+			select {
+			case <-p.doneChan:
+			case <-time.After(5 * time.Second):
+			}
+			p.fireFallback(fmt.Sprintf("hw codec produced no HLS output within %s (stream hung)", hwWatchdogTimeout))
+		}()
+	}
 	return nil
 }
 
 func (p *PreviewStream) Stop() {
+	p.stopped.Store(true)
 	p.mu.Lock()
 	running := p.running
 	var proc *os.Process

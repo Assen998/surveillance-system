@@ -207,6 +207,7 @@ func Load(configPath string) (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, err
 	}
+	applyDefaults(&cfg)
 
 	cfg.Storage.Local.RootPath = expandPath(cfg.Storage.Local.RootPath)
 	cfg.Database.SQLite.Path = expandPath(cfg.Database.SQLite.Path)
@@ -214,6 +215,42 @@ func Load(configPath string) (*Config, error) {
 
 	GlobalConfig = &cfg
 	return &cfg, nil
+}
+
+// applyDefaults 为关键数值配置补默认值，避免配置缺项时 0 值穿透
+// （典型故障：cleanup_interval 缺失 → time.NewTicker(0) 启动即 panic；
+// max_reconnect 缺失 → 首次连接失败即永久放弃重连）
+func applyDefaults(cfg *Config) {
+	if cfg.Storage.Local.CleanupInterval <= 0 {
+		cfg.Storage.Local.CleanupInterval = 3600 // 1h
+	}
+	if cfg.Storage.Local.SegmentDuration <= 0 {
+		cfg.Storage.Local.SegmentDuration = 180 // 3min
+	}
+	if cfg.Camera.DiscoveryTimeout <= 0 {
+		cfg.Camera.DiscoveryTimeout = 10
+	}
+	if cfg.Camera.StreamTimeout <= 0 {
+		cfg.Camera.StreamTimeout = 30
+	}
+	if cfg.Camera.ReconnectInterval <= 0 {
+		cfg.Camera.ReconnectInterval = 30
+	}
+	if cfg.Camera.MaxReconnect <= 0 {
+		cfg.Camera.MaxReconnect = 30
+	}
+	if cfg.Camera.SnapshotInterval <= 0 {
+		cfg.Camera.SnapshotInterval = 300 // 5min
+	}
+	if cfg.Camera.OnvifEvent.PollInterval <= 0 {
+		cfg.Camera.OnvifEvent.PollInterval = 10
+	}
+	if cfg.Camera.MotionRecord.Duration <= 0 {
+		cfg.Camera.MotionRecord.Duration = 30
+	}
+	if cfg.Camera.MotionRecord.Cooldown <= 0 {
+		cfg.Camera.MotionRecord.Cooldown = 30
+	}
 }
 
 func expandPath(path string) string {

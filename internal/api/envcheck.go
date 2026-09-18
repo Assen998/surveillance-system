@@ -74,6 +74,7 @@ func (s *Server) runEnvChecksL(l string) EnvReport {
 		})
 	}
 
+	ffprobeOK := false
 	if v, err := runVersionCmd("ffprobe"); err != nil {
 		report.Checks = append(report.Checks, CheckItem{
 			Name: "ffprobe", Status: envFail, Required: true,
@@ -81,9 +82,14 @@ func (s *Server) runEnvChecksL(l string) EnvReport {
 			Fix:    TEnv(l, "env.ffprobe.fix"),
 		})
 	} else {
+		ffprobeOK = true
 		report.Checks = append(report.Checks, CheckItem{
 			Name: "ffprobe", Status: envOK, Detail: v,
 		})
+	}
+
+	if ffprobeOK {
+		report.Checks = append(report.Checks, s.hwCodecCheck(l))
 	}
 
 	if s.cfg.Database.Type == "sqlite" {

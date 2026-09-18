@@ -210,6 +210,10 @@ export const api = {
 
     envCheck: () => request.get('/system/env'),
 
+    hwCodec: () => request.get('/system/hw-codec'),
+    settings: () => request.get('/system/settings'),
+    updateSettings: (data: any) => request.put('/system/settings', data),
+
     logTail: (params: { lines?: number; keyword?: string }) =>
       request.get('/system/logs', { params }),
     logFiles: () => request.get('/system/logs/files'),

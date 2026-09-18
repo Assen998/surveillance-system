@@ -38,7 +38,9 @@ import (
 	"github.com/yourorg/surveillance-system/internal/config"
 	"github.com/yourorg/surveillance-system/internal/database"
 	"github.com/yourorg/surveillance-system/internal/models"
+	"github.com/yourorg/surveillance-system/internal/settings"
 	"github.com/yourorg/surveillance-system/internal/storage"
+	"github.com/yourorg/surveillance-system/pkg/hwcodec"
 	"github.com/yourorg/surveillance-system/pkg/minio"
 	"github.com/yourorg/surveillance-system/pkg/webdav"
 )
@@ -237,6 +239,9 @@ func (s *Server) setupRoutes() {
 				system.POST("/restart", s.restartSystem)
 
 				system.GET("/env", s.getEnvCheck)
+				system.GET("/hw-codec", s.getHWCodec)
+				system.GET("/settings", s.getSystemSettings)
+				system.PUT("/settings", s.updateSystemSettings)
 
 				system.GET("/logs", s.getLogTail)
 				system.GET("/logs/files", s.getLogFiles)
@@ -863,6 +868,30 @@ func (s *Server) createCamera(c *gin.Context) {
 	}
 
 	cam := req.toModel()
+
+	// 新摄像头：未填字段用「录像默认配置」页的值预填
+	cd := settings.GetCameraDefaults()
+	if req.RecordEnabled == nil {
+		cam.RecordEnabled = cd.RecordEnabled
+	}
+	if cam.RecordType == "" {
+		cam.RecordType = cd.RecordType
+	}
+	if cam.Width == 0 {
+		cam.Width = cd.Width
+	}
+	if cam.Height == 0 {
+		cam.Height = cd.Height
+	}
+	if cam.FPS == 0 {
+		cam.FPS = cd.FPS
+	}
+	if cam.Bitrate == 0 {
+		cam.Bitrate = cd.Bitrate
+	}
+	if cam.Codec == "" {
+		cam.Codec = cd.Codec
+	}
 
 	if cam.Protocol == "rtsp" && cam.RecordType == "motion" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "RTSP cameras do not support motion-detection recording (it relies on ONVIF event reporting); please choose continuous or scheduled recording"})
@@ -2348,6 +2377,56 @@ func (s *Server) getSystemConfig(c *gin.Context) {
 func (s *Server) updateSystemConfig(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "config updated"})
+}
+
+// getHWCodec 返回硬件编解码检测结果（设置页硬件开关用）
+func (s *Server) getHWCodec(c *gin.Context) {
+	c.JSON(http.StatusOK, hwcodec.Detect())
+}
+
+// getSystemSettings 系统级设置：硬件编解码开关 + 录像默认值
+func (s *Server) getSystemSettings(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"hw_decode":       settings.GetBool(settings.KeyHWDecode, false),
+		"hw_encode":       settings.GetBool(settings.KeyHWEncode, false),
+		"camera_defaults": settings.GetCameraDefaults(),
+	})
+}
+
+// updateSystemSettings 保存系统级设置（缺省字段不修改）
+func (s *Server) updateSystemSettings(c *gin.Context) {
+	var req struct {
+		HWDecode       *bool                    `json:"hw_decode"`
+		HWEncode       *bool                    `json:"hw_encode"`
+		CameraDefaults *settings.CameraDefaults `json:"camera_defaults"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.HWDecode != nil {
+		if err := settings.Set(settings.KeyHWDecode, strconv.FormatBool(*req.HWDecode), "硬件解码开关（预览转码输入侧）"); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if req.HWEncode != nil {
+		if err := settings.Set(settings.KeyHWEncode, strconv.FormatBool(*req.HWEncode), "硬件编码开关（预览转码输出侧）"); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if req.CameraDefaults != nil {
+		if err := settings.SetCameraDefaults(*req.CameraDefaults); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	// 硬件开关变化：清除各摄像头的硬件失败回退标记，允许重新尝试硬件路径
+	if req.HWDecode != nil || req.HWEncode != nil {
+		s.cameraMgr.ClearHWFailures()
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "ok"})
 }
 
 func (s *Server) getSystemInfo(c *gin.Context) {

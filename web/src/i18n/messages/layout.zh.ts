@@ -22,7 +22,7 @@ export default {
       storage: '存储管理',
       settings: '系统设置',
       settingsSystem: '系统配置',
-      settingsCameraDefaults: '摄像头默认配置',
+      settingsCameraDefaults: '录像默认配置',
       settingsStorage: '存储设置',
       settingsMaintenance: '系统维护',
       settingsAlerts: '报警配置',

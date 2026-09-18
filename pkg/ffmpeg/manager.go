@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -716,6 +717,14 @@ type PreviewStream struct {
 	mu        sync.Mutex
 
 	Src string
+
+	// 硬件编解码（由 camera 服务按系统设置+硬件能力注入；nil = 软件路径）
+	DecodeArgs []string // 输入侧参数（插在 -i 之前）
+	EncodeArgs []string // 编码参数（整体替换 libx264 块）
+	// OnHWFallback 硬件路径启动后短时间内自行退出（未被 Stop）时调用，
+	// 由 camera 服务标记回退并立即用软编解码重启
+	OnHWFallback func()
+	stopped      atomic.Bool
 }
 
 func NewPreviewStream(cameraID uint, rtspURL, outputDir string) *PreviewStream {
@@ -744,26 +753,34 @@ func (p *PreviewStream) Start() error {
 	startSeq := p.nextStartSequence()
 	p.removeHLSFiles(p.listHLSFiles())
 
-	args := []string{
-		"-y",
-		"-rtsp_transport", "tcp",
-
-		"-i", p.rtspURL,
-		"-map", "0:v:0",
-		"-c:v", "libx264",
-		"-preset", "veryfast",
-		"-tune", "zerolatency",
-		"-g", "50",
-		"-keyint_min", "50",
-		"-sc_threshold", "0",
-		"-pix_fmt", "yuv420p",
+	args := []string{"-y", "-rtsp_transport", "tcp"}
+	// 硬件解码：输入侧参数必须在 -i 之前
+	if len(p.DecodeArgs) > 0 {
+		args = append(args, p.DecodeArgs...)
+	}
+	args = append(args, "-i", p.rtspURL, "-map", "0:v:0")
+	if len(p.EncodeArgs) > 0 {
+		// 硬件编码：整体替换 libx264 块（含 -b:v/-pix_fmt）
+		args = append(args, p.EncodeArgs...)
+	} else {
+		args = append(args,
+			"-c:v", "libx264",
+			"-preset", "veryfast",
+			"-tune", "zerolatency",
+			"-g", "50",
+			"-keyint_min", "50",
+			"-sc_threshold", "0",
+			"-pix_fmt", "yuv420p",
+		)
+	}
+	args = append(args,
 		"-an",
 		"-f", "hls",
 		"-hls_time", "2",
 		"-hls_list_size", "6",
 		"-hls_flags", "delete_segments+append_list",
 		"-hls_segment_filename", filepath.Join(p.outputDir, "hls_segment_%03d.ts"),
-	}
+	)
 
 	if startSeq > 0 {
 		args = append(args, "-start_number", strconv.Itoa(startSeq))
@@ -775,6 +792,7 @@ func (p *PreviewStream) Start() error {
 		p.mu.Unlock()
 		return err
 	}
+	p.stopped.Store(false)
 	p.running = true
 	p.startTime = time.Now()
 	p.mu.Unlock()
@@ -782,9 +800,17 @@ func (p *PreviewStream) Start() error {
 	go func() {
 		p.cmd.Wait()
 		p.mu.Lock()
+		usedHW := len(p.DecodeArgs) > 0 || len(p.EncodeArgs) > 0
+		elapsed := time.Since(p.startTime)
+		cb := p.OnHWFallback
 		p.running = false
 		p.mu.Unlock()
 		close(p.doneChan)
+		// 硬件路径启动后短时间内自行退出且非主动 Stop → 判定硬件不可用，
+		// 通知 camera 服务回退软编解码（避免反复用硬件参数重试）
+		if usedHW && !p.stopped.Load() && elapsed < 15*time.Second && cb != nil {
+			cb()
+		}
 	}()
 	return nil
 }

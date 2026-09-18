@@ -14,7 +14,6 @@ export default {
     saveSuccess: '保存成功',
     saveFailed: '保存失败',
     testSent: '测试消息已发送',
-    testFailed: '发送失败',
     emailTitle: '邮件通知配置',
     emailEnabled: '启用邮件通知',
     smtpHost: 'SMTP 服务器',

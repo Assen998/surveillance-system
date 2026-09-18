@@ -14,7 +14,6 @@ export default {
     saveSuccess: 'Saved',
     saveFailed: 'Save failed',
     testSent: 'Test message sent',
-    testFailed: 'Send failed',
     emailTitle: 'Email Notification Config',
     emailEnabled: 'Enable Email',
     smtpHost: 'SMTP Server',

@@ -22,7 +22,7 @@ export default {
       storage: 'Storage',
       settings: 'Settings',
       settingsSystem: 'System Config',
-      settingsCameraDefaults: 'Camera Defaults',
+      settingsCameraDefaults: 'Recording Defaults',
       settingsStorage: 'Storage Settings',
       settingsMaintenance: 'Maintenance',
       settingsAlerts: 'Alert Config',

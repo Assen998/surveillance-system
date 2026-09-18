@@ -17,8 +17,10 @@ import (
 	"github.com/yourorg/surveillance-system/internal/config"
 	"github.com/yourorg/surveillance-system/internal/database"
 	"github.com/yourorg/surveillance-system/internal/models"
+	"github.com/yourorg/surveillance-system/internal/settings"
 	"github.com/yourorg/surveillance-system/internal/storage"
 	"github.com/yourorg/surveillance-system/pkg/ffmpeg"
+	"github.com/yourorg/surveillance-system/pkg/hwcodec"
 	"github.com/yourorg/surveillance-system/pkg/minio"
 	"github.com/yourorg/surveillance-system/pkg/onvif"
 	"github.com/yourorg/surveillance-system/pkg/webdav"
@@ -44,6 +46,9 @@ type CameraManager struct {
 	snapEnabled  bool
 	snapInterval int
 	snapChanged  chan struct{}
+
+	hwReportMu sync.Mutex
+	hwReport   *hwcodec.Report
 }
 
 type CameraInstance struct {
@@ -60,6 +65,8 @@ type CameraInstance struct {
 
 	previewLastActive time.Time
 	previewMu         sync.Mutex
+
+	hwFailed bool // 硬件编解码失败标记：置位后该摄像头回退软编解码（重启/切换开关时清除）
 
 	RecordRTSPURL  string
 	PreviewRTSPURL string
@@ -775,6 +782,53 @@ func (m *CameraManager) Snapshot(cameraID uint) (string, error) {
 
 const previewIdleTimeout = 30 * time.Second
 
+// hwReportCached 硬件编解码能力报告（启动后首次使用时检测并缓存）
+func (m *CameraManager) hwReportCached() hwcodec.Report {
+	m.hwReportMu.Lock()
+	defer m.hwReportMu.Unlock()
+	if m.hwReport == nil {
+		r := hwcodec.Detect()
+		m.hwReport = &r
+	}
+	return *m.hwReport
+}
+
+// hwPreviewOpts 按系统设置 + 硬件能力 + 摄像头失败标记，生成预览流的
+// 硬件解码/编码 ffmpeg 参数；返回 nil 表示该方向走软件路径。
+func (m *CameraManager) hwPreviewOpts(inst *CameraInstance) (decodeArgs, encodeArgs []string) {
+	inst.mu.Lock()
+	failed := inst.hwFailed
+	codec := inst.Model.Codec
+	bitrate := inst.Model.Bitrate
+	inst.mu.Unlock()
+	if failed {
+		return nil, nil
+	}
+	report := m.hwReportCached()
+	if settings.GetBool(settings.KeyHWDecode, false) {
+		decodeArgs = report.DecodeInputArgs(codec)
+	}
+	if settings.GetBool(settings.KeyHWEncode, false) {
+		encodeArgs = report.EncodeArgs(codec, bitrate)
+	}
+	return
+}
+
+// ClearHWFailures 清除所有摄像头的硬件失败回退标记（硬件开关变化时调用）
+func (m *CameraManager) ClearHWFailures() {
+	m.mu.RLock()
+	cams := make([]*CameraInstance, 0, len(m.cameras))
+	for _, inst := range m.cameras {
+		cams = append(cams, inst)
+	}
+	m.mu.RUnlock()
+	for _, inst := range cams {
+		inst.mu.Lock()
+		inst.hwFailed = false
+		inst.mu.Unlock()
+	}
+}
+
 func (m *CameraManager) EnsurePreview(cameraID uint, src string) error {
 	m.mu.RLock()
 	inst, ok := m.cameras[cameraID]
@@ -820,8 +874,23 @@ func (m *CameraManager) EnsurePreview(cameraID uint, src string) error {
 	}
 
 	outDir := m.getCameraStoragePath(cameraID)
+	decodeArgs, encodeArgs := m.hwPreviewOpts(inst)
 	inst.Preview = ffmpeg.NewPreviewStream(cameraID, rtspURL, outDir)
 	inst.Preview.Src = src
+	if len(decodeArgs) > 0 || len(encodeArgs) > 0 {
+		inst.Preview.DecodeArgs = decodeArgs
+		inst.Preview.EncodeArgs = encodeArgs
+		inst.Preview.OnHWFallback = func() {
+			inst.mu.Lock()
+			inst.hwFailed = true
+			inst.mu.Unlock()
+			logrus.Warnf("camera %s hw codec stream died shortly after start, falling back to software codec (until camera restart or hw setting toggle)", inst.Model.Name)
+			// 立即用软编解码重试，用户无感
+			if err := m.EnsurePreview(cameraID, src); err != nil {
+				logrus.Warnf("camera %s software preview restart failed: %v", inst.Model.Name, err)
+			}
+		}
+	}
 	if err := inst.Preview.Start(); err != nil {
 		inst.Preview = nil
 		return fmt.Errorf("failed to start preview stream: %w", err)
@@ -1136,6 +1205,7 @@ func (m *CameraManager) StartCamera(id uint) error {
 		inst.StopChan = make(chan struct{})
 		inst.loopDone = make(chan struct{})
 		inst.ReconnectCnt = 0
+		inst.hwFailed = false // 重启摄像头：重新尝试硬件编解码
 	} else {
 		inst = &CameraInstance{
 			Model:    cloneCamera(cam),

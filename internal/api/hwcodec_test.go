@@ -3,26 +3,32 @@ package api
 import (
 	"strings"
 	"testing"
+
+	"github.com/yourorg/surveillance-system/pkg/hwcodec"
 )
 
-func stubDevices(t *testing.T, nvidia, dri bool) {
+// stubDevices 注入设备探测：nvidia/dri 布尔 + V4L2 节点名列表
+func stubDevices(t *testing.T, nvidia, dri bool, v4l2Nodes ...string) {
 	t.Helper()
-	oldFE, oldGlob := fileExists, globAny
-	fileExists = func(path string) bool {
-		if path == "/dev/nvidia0" {
-			return nvidia
-		}
-		return false
+	byName := map[string]string{}
+	for i, n := range v4l2Nodes {
+		byName["/sys/class/video4linux/video"+string(rune('0'+i))+"/name"] = n
 	}
-	globAny = func(pattern string) bool {
-		if strings.Contains(pattern, "renderD") {
-			return dri
-		}
-		return false
+	nodeList := make([]string, 0, len(v4l2Nodes))
+	for i := range v4l2Nodes {
+		nodeList = append(nodeList, "video"+string(rune('0'+i)))
 	}
-	t.Cleanup(func() {
-		fileExists, globAny = oldFE, oldGlob
-	})
+	hwcodec.SetDeviceCheckers(
+		func(path string) bool { return path == "/dev/nvidia0" && nvidia },
+		func(pattern string) bool { return strings.Contains(pattern, "renderD") && dri },
+		func(dir string) []string {
+			if dir == "/sys/class/video4linux" {
+				return nodeList
+			}
+			return nil
+		},
+		func(path string) string { return byName[path] },
+	)
 }
 
 func TestHwCodecNoDevice(t *testing.T) {
@@ -35,7 +41,7 @@ func TestHwCodecNoDevice(t *testing.T) {
 	if item.Name != "硬件编解码" {
 		t.Fatalf("unexpected name: %s", item.Name)
 	}
-	// 本机（无 GPU）：编解码器已编译但无设备 → compiled 文案
+	// 无 GPU/无 VPU 节点：已编译但不可用
 	if !strings.Contains(item.Detail, "已编译") {
 		t.Fatalf("expected compiled message, got: %s", item.Detail)
 	}
@@ -49,7 +55,6 @@ func TestHwCodecNvidiaWarn(t *testing.T) {
 	stubDevices(t, true, true)
 	s := &Server{}
 	item := s.hwCodecCheck(localeEN)
-	// 有 NVIDIA 设备但 ffmpeg 无 NVENC/CUVID（若本机 ffmpeg 恰有支持则跳过断言）
 	if item.Status == envWarn {
 		if !strings.Contains(item.Detail, "NVENC") {
 			t.Fatalf("warn should mention NVENC: %s", item.Detail)
@@ -61,7 +66,6 @@ func TestHwCodecNvidiaWarn(t *testing.T) {
 }
 
 func TestHwCodecDriReady(t *testing.T) {
-	// 无 NVIDIA、有 DRI（x86 iGPU 场景）：VAAPI/QSV 应归入"可用"
 	stubDevices(t, false, true)
 	s := &Server{}
 	item := s.hwCodecCheck(localeZH)
@@ -73,14 +77,46 @@ func TestHwCodecDriReady(t *testing.T) {
 	}
 }
 
-func TestBaseCodec(t *testing.T) {
-	cases := map[string]string{
-		"h264_vaapi": "h264", "hevc_nvdec": "hevc", "av1_qsv": "av1",
-		"mpeg4_amf": "mpeg4", "h264": "h264",
+func TestHwCodecAmlogicDecodeOnly(t *testing.T) {
+	// .231 场景：Amlogic SoC 只有硬件解码节点（meson-video-decoder）
+	stubDevices(t, false, false, "meson-video-decoder")
+	r := hwcodec.Detect()
+	if !r.Decode.Available {
+		t.Fatalf("expected decode available, got %+v", r.Decode)
 	}
-	for in, want := range cases {
-		if got := baseCodec(in); got != want {
-			t.Errorf("baseCodec(%s) = %s, want %s", in, got, want)
+	if r.Decode.Feature != "V4L2 M2M" {
+		t.Fatalf("expected V4L2 M2M, got %s", r.Decode.Feature)
+	}
+	if r.Encode.Available {
+		t.Fatalf("expected encode unavailable on decode-only SoC, got %+v", r.Encode)
+	}
+	if r.Encode.Reason != hwcodec.ReasonNoSOPCDevice {
+		t.Fatalf("expected no_sopc_device reason, got %s", r.Encode.Reason)
+	}
+	args := r.DecodeInputArgs("h264")
+	if len(args) != 2 || args[0] != "-c:v" || args[1] != "h264_v4l2m2m" {
+		t.Fatalf("unexpected decode args: %v", args)
+	}
+}
+
+func TestHWCodecNormalizeAndArgs(t *testing.T) {
+	if got := hwcodec.NormalizeCodec("h265"); got != "hevc" {
+		t.Fatalf("NormalizeCodec(h265) = %s", got)
+	}
+	if got := hwcodec.NormalizeCodec("H.264"); got != "h264" {
+		t.Fatalf("NormalizeCodec(H.264) = %s", got)
+	}
+	stubDevices(t, true, false) // NVIDIA 设备
+	r := hwcodec.Detect()
+	// 若本机 ffmpeg 含 nvenc/cuvid（常见），编码参数应可用
+	if r.Encode.Available {
+		args := r.EncodeArgs("h264", 4096)
+		joined := strings.Join(args, " ")
+		if !strings.Contains(joined, "nvenc") {
+			t.Fatalf("expected nvenc in args: %s", joined)
+		}
+		if !strings.Contains(joined, "4096k") {
+			t.Fatalf("expected bitrate in args: %s", joined)
 		}
 	}
 }

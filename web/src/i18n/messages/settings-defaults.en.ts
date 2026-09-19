@@ -29,7 +29,8 @@ export default {
       no_ffmpeg_support: 'The current ffmpeg build has no hardware codec support compiled in',
       nvidia_no_cuda: 'NVIDIA GPU detected, but the current ffmpeg lacks NVENC/CUVID support (use an ffmpeg build with CUDA)',
       no_device: 'No usable hardware device detected (no corresponding GPU/display node)',
-      no_sopc_device: 'No SoC hardware codec node detected (the chip may lack a HW unit in this direction)',
+      no_sopc_device: 'No SoC hardware codec node detected (this chip may lack a hardware unit for this direction)',
+      hw_verify_failed: 'HW codec unit detected, but the real self-test failed (incompatible with the current ffmpeg/driver)',
     },
   },
 }

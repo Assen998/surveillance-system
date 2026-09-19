@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,6 +12,7 @@ import (
 // stubDevices 注入设备探测：nvidia/dri 布尔 + V4L2 节点名列表
 func stubDevices(t *testing.T, nvidia, dri bool, v4l2Nodes ...string) {
 	t.Helper()
+	t.Cleanup(func() { hwcodec.ResetVerify() })
 	byName := map[string]string{}
 	for i, n := range v4l2Nodes {
 		byName["/sys/class/video4linux/video"+string(rune('0'+i))+"/name"] = n
@@ -118,5 +121,37 @@ func TestHWCodecNormalizeAndArgs(t *testing.T) {
 		if !strings.Contains(joined, "4096k") {
 			t.Fatalf("expected bitrate in args: %s", joined)
 		}
+	}
+}
+
+func TestHwCodecCheckVerifyFailed(t *testing.T) {
+	// .231 场景完整版：解码节点存在，但真实自检失败（驱动/ffmpeg 不兼容）
+	stubDevices(t, false, false, "meson-video-decoder")
+	ctxStub := func(ctx context.Context, name string, args ...string) error {
+		for _, a := range args {
+			if a == "h264_v4l2m2m" {
+				return errors.New("probe failed")
+			}
+		}
+		return nil
+	}
+	hwcodec.SetProbeRunner(ctxStub)
+
+	hwcodec.RunVerify()
+
+	var s Server
+	item := s.hwCodecCheck(localeZH)
+	if item.Status != envWarn {
+		t.Fatalf("expected warn status, got %s", item.Status)
+	}
+	if !strings.Contains(item.Detail, "自检未通过") {
+		t.Fatalf("expected verify-failed detail, got %s", item.Detail)
+	}
+	if !strings.Contains(item.Detail, "V4L2 M2M") {
+		t.Fatalf("expected feature name in detail, got %s", item.Detail)
+	}
+	// 探测失败的 V4L2 M2M 不应再出现在“已编译但未检测可用设备”列表里
+	if strings.Contains(item.Detail, "另已编译支持") && strings.Count(item.Detail, "V4L2 M2M") > 1 {
+		t.Fatalf("failed feature should not be listed twice: %s", item.Detail)
 	}
 }

@@ -30,6 +30,7 @@ export default {
       nvidia_no_cuda: '检测到 NVIDIA GPU，但当前 ffmpeg 缺少 NVENC/CUVID 支持（需换用带 CUDA 的 ffmpeg 构建）',
       no_device: '未检测到可用硬件设备（无对应 GPU/显示节点）',
       no_sopc_device: '未检测到 SoC 硬件编解码节点（该芯片可能无此方向的硬件单元）',
+      hw_verify_failed: '检测到硬件编解码单元，但实际自检未通过（当前 ffmpeg/驱动组合不兼容）',
     },
   },
 }

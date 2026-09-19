@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/yourorg/surveillance-system/pkg/hwcodec"
 	"io"
 	"net/http"
 	"os"
@@ -86,6 +87,13 @@ func main() {
 	}
 
 	gin.SetMode(cfg.Server.Mode)
+
+	// 启动后后台执行硬件编解码自检（真实合成流解码/编码一次，
+	// 识别「设备节点存在但驱动/ffmpeg 不兼容」的假可用，如 .231 Amlogic）
+	go func() {
+		time.Sleep(3 * time.Second)
+		hwcodec.RunVerify()
+	}()
 
 	apiServer := api.NewServer(cfg, cameraMgr, storageMgr, alertMgr)
 	apiServer.SetRuntimeStorage(storageRT)

@@ -59,6 +59,43 @@ func (s *Server) hwCodecCheck(l string) CheckItem {
 	sortByPrio(ready)
 	sort.Strings(compiled)
 
+	// 设备存在但真实自检未通过 → warn（.231 Amlogic 场景：节点在但驱动/ffmpeg 不兼容）
+	if report.Decode.Reason == hwcodec.ReasonVerifyFailed || report.Encode.Reason == hwcodec.ReasonVerifyFailed {
+		parts := []string{}
+		compiled := []string{}
+		for _, c := range report.Features {
+			if c.DeviceOK() {
+				continue
+			}
+			desc := featDesc(c)
+			if report.Decode.Reason == hwcodec.ReasonVerifyFailed && c.Name == report.Decode.Feature {
+				continue
+			}
+			if report.Encode.Reason == hwcodec.ReasonVerifyFailed && c.Name == report.Encode.Feature {
+				continue
+			}
+			compiled = append(compiled, desc)
+		}
+		if report.Decode.Reason == hwcodec.ReasonVerifyFailed {
+			parts = append(parts, TEnv(l, "env.hw.verifyFailed", report.Decode.Feature))
+		}
+		if report.Encode.Reason == hwcodec.ReasonVerifyFailed {
+			parts = append(parts, TEnv(l, "env.hw.verifyFailed", report.Encode.Feature))
+		}
+		detail := strings.Join(parts, "；")
+		if l != localeZH {
+			detail = strings.Join(parts, "; ")
+		}
+		if len(compiled) > 0 {
+			detail += "；" + TEnv(l, "env.hw.also", strings.Join(compiled, sep))
+		}
+		return CheckItem{
+			Name: name, Status: envWarn,
+			Detail: detail,
+			Fix:    TEnv(l, "env.hw.verifyFix"),
+		}
+	}
+
 	// 有 NVIDIA GPU 但 ffmpeg 不含其硬件编解码 → warn（卡买了但用不上）
 	if report.Decode.Reason == hwcodec.ReasonNvidiaNoCUDA || report.Encode.Reason == hwcodec.ReasonNvidiaNoCUDA {
 		return CheckItem{

@@ -49,6 +49,7 @@ const (
 	ReasonNvidiaNoCUDA = "nvidia_no_cuda"
 	ReasonNoDevice     = "no_device"
 	ReasonNoSOPCDevice = "no_sopc_device"
+	ReasonVerifyFailed = "hw_verify_failed" // 设备存在但真实自检未通过（驱动/ffmpeg 不兼容）
 )
 
 // Feature 一个硬件加速功能（如 NVIDIA NVENC）的检测结果
@@ -248,8 +249,20 @@ func deviceOKFor(feat string, isDecode bool, nvidia, dri, vpuDecode, vpuEncode b
 	return false
 }
 
-// Detect 执行完整检测（ffprobe 编解码器列表 + 设备启发式）
+// Detect 执行完整检测（ffprobe 编解码器列表 + 设备启发式 + 自检结果）。
+// 自检（RunVerify）异步执行；自检完成前返回设备启发式结果，
+// 完成后自检未通过的方向会被降级为不可用（reason=hw_verify_failed）。
 func Detect() Report {
+	features, nvidia := detectFeatures()
+	downgradeFeatures(features)
+	report := Report{Features: features}
+	report.Decode = bestCapability(features, true, nvidia, failedFeatureFor(features, true))
+	report.Encode = bestCapability(features, false, nvidia, failedFeatureFor(features, false))
+	return report
+}
+
+// detectFeatures 核心检测：编译支持 + 设备启发式
+func detectFeatures() ([]Feature, bool) {
 	decSet := ffprobeCodecSet("-decoders")
 	encSet := ffprobeCodecSet("-encoders")
 
@@ -289,11 +302,7 @@ func Detect() Report {
 		})
 	}
 	sort.Slice(features, func(i, j int) bool { return features[i].Name < features[j].Name })
-
-	report := Report{Features: features}
-	report.Decode = bestCapability(features, true, nvidia)
-	report.Encode = bestCapability(features, false, nvidia)
-	return report
+	return features, nvidia
 }
 
 var decodePriority = []string{
@@ -305,7 +314,7 @@ var encodePriority = []string{
 	"Rockchip RKMPP", "Windows MF", "AMD AMF", "Raspberry Pi MMAL",
 }
 
-func bestCapability(features []Feature, isDecode bool, nvidia bool) Capability {
+func bestCapability(features []Feature, isDecode bool, nvidia bool, failedFeature string) Capability {
 	priority := decodePriority
 	if !isDecode {
 		priority = encodePriority
@@ -341,6 +350,10 @@ func bestCapability(features []Feature, isDecode bool, nvidia bool) Capability {
 	}
 	cap := Capability{Compiled: compiledAny}
 	switch {
+	case failedFeature != "":
+		// 设备存在但真实自检未通过（.231 Amlogic 场景）
+		cap.Reason = ReasonVerifyFailed
+		cap.Feature = failedFeature
 	case nvidia:
 		// 有 NVIDIA GPU 但 ffmpeg 无对应支持（该方向无任何 NVIDIA 功能命中）
 		cap.Reason = ReasonNvidiaNoCUDA

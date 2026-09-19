@@ -859,6 +859,16 @@ func (p *PreviewStream) Start() error {
 	return nil
 }
 
+// UsingHW 是否正在使用硬件编解码参数
+func (p *PreviewStream) UsingHW() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.DecodeArgs) > 0 || len(p.EncodeArgs) > 0
+}
+
+// DoneChan 进程退出后关闭的 channel（等待停止用）
+func (p *PreviewStream) DoneChan() <-chan struct{} { return p.doneChan }
+
 func (p *PreviewStream) Stop() {
 	p.stopped.Store(true)
 	p.mu.Lock()

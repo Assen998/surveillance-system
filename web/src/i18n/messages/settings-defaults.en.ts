@@ -20,7 +20,7 @@ export default {
     hwAcceleration: 'Hardware Acceleration',
     hwHint: 'Applies to preview transcode; recording is copy passthrough and unaffected',
     hwDecode: 'Hardware Decode',
-    hwDecodeDesc: 'Preview stream decoding uses the HW decode unit to reduce CPU load',
+    hwDecodeDesc: 'Preview stream decoding uses the HW decode unit to reduce CPU load. When enabled, each camera is self-tested on its real stream: passing cameras switch to HW decode automatically, failing/hung ones stay on software (re-tested after camera restart or toggling this switch)',
     hwEncode: 'Hardware Encode',
     hwEncodeDesc: 'Preview transcode uses the HW encode unit (slightly different quality/latency characteristics than software encode)',
     hwAvailable: 'Available',

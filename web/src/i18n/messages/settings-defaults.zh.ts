@@ -20,7 +20,7 @@ export default {
     hwAcceleration: '硬件加速',
     hwHint: '对预览转码生效；录像为 copy 透传，不受影响',
     hwDecode: '硬件解码',
-    hwDecodeDesc: '预览拉流解码使用硬件解码单元，降低 CPU 占用',
+    hwDecodeDesc: '预览拉流解码使用硬件解码单元，降低 CPU 占用。开启后对每台摄像头做真实流自检：通过自动切硬件解码，失败/挂死则保持软解码（重启摄像头或切换开关后重新自检）',
     hwEncode: '硬件编码',
     hwEncodeDesc: '预览转码使用硬件编码单元（与软件编码的质量/延迟特性略有差异）',
     hwAvailable: '可用',

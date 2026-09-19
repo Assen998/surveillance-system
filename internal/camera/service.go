@@ -66,7 +66,9 @@ type CameraInstance struct {
 	previewLastActive time.Time
 	previewMu         sync.Mutex
 
-	hwFailed bool // 硬件编解码失败标记：置位后该摄像头回退软编解码（重启/切换开关时清除）
+	hwFailed        bool // 硬件编解码失败标记：置位后该摄像头回退软编解码（重启/切换开关时清除）
+	hwProbedOK      bool // 硬件解码真实流自检通过：预览允许使用硬件解码（重启/切换开关时清除）
+	hwProbeInFlight bool // 硬件解码真实流自检进行中
 
 	RecordRTSPURL  string
 	PreviewRTSPURL string
@@ -783,11 +785,14 @@ func (m *CameraManager) Snapshot(cameraID uint) (string, error) {
 const previewIdleTimeout = 30 * time.Second
 
 // hwReportCached 硬件编解码能力报告（启动后首次使用时检测并缓存）
+// detectHWReport 可注入（测试用）
+var detectHWReport = hwcodec.Detect
+
 func (m *CameraManager) hwReportCached() hwcodec.Report {
 	m.hwReportMu.Lock()
 	defer m.hwReportMu.Unlock()
 	if m.hwReport == nil {
-		r := hwcodec.Detect()
+		r := detectHWReport()
 		m.hwReport = &r
 	}
 	return *m.hwReport
@@ -798,6 +803,7 @@ func (m *CameraManager) hwReportCached() hwcodec.Report {
 func (m *CameraManager) hwPreviewOpts(inst *CameraInstance) (decodeArgs, encodeArgs []string) {
 	inst.mu.Lock()
 	failed := inst.hwFailed
+	probedOK := inst.hwProbedOK
 	codec := inst.Model.Codec
 	bitrate := inst.Model.Bitrate
 	inst.mu.Unlock()
@@ -805,7 +811,8 @@ func (m *CameraManager) hwPreviewOpts(inst *CameraInstance) (decodeArgs, encodeA
 		return nil, nil
 	}
 	report := m.hwReportCached()
-	if settings.GetBool(settings.KeyHWDecode, false) {
+	// 硬件解码只对真实流自检通过的摄像头启用（避免 VPU 挂死卡住预览）
+	if probedOK && settings.GetBool(settings.KeyHWDecode, false) {
 		decodeArgs = report.DecodeInputArgs(codec)
 	}
 	if settings.GetBool(settings.KeyHWEncode, false) {
@@ -825,6 +832,8 @@ func (m *CameraManager) ClearHWFailures() {
 	for _, inst := range cams {
 		inst.mu.Lock()
 		inst.hwFailed = false
+		inst.hwProbedOK = false
+		inst.hwProbeInFlight = false
 		inst.mu.Unlock()
 	}
 }
@@ -857,21 +866,7 @@ func (m *CameraManager) EnsurePreview(cameraID uint, src string) error {
 		logrus.Infof("camera %s preview stream switched: %s -> %s", inst.Model.Name, old.Src, src)
 	}
 
-	var rtspURL string
-	if src == "sub" {
-		rtspURL = inst.PreviewRTSPURL
-		if rtspURL == "" {
-			rtspURL = inst.RecordRTSPURL
-		}
-	} else {
-		rtspURL = inst.RecordRTSPURL
-		if rtspURL == "" {
-			rtspURL = inst.PreviewRTSPURL
-		}
-	}
-	if rtspURL == "" {
-		rtspURL = BuildRTSPURL(inst.Model)
-	}
+	rtspURL := m.resolvePreviewURL(inst, src)
 
 	outDir := m.getCameraStoragePath(cameraID)
 	decodeArgs, encodeArgs := m.hwPreviewOpts(inst)
@@ -880,19 +875,7 @@ func (m *CameraManager) EnsurePreview(cameraID uint, src string) error {
 	if len(decodeArgs) > 0 || len(encodeArgs) > 0 {
 		inst.Preview.DecodeArgs = decodeArgs
 		inst.Preview.EncodeArgs = encodeArgs
-		inst.Preview.OnHWFallback = func() {
-			inst.mu.Lock()
-			inst.hwFailed = true
-			running := inst.running
-			inst.mu.Unlock()
-			logrus.Warnf("camera %s hw codec preview failed, falling back to software codec (until camera restart or hw setting toggle)", inst.Model.Name)
-			// 立即用软编解码重试（仅当摄像头仍在运行，避免复活已停止的摄像头）
-			if running {
-				if err := m.EnsurePreview(cameraID, src); err != nil {
-					logrus.Warnf("camera %s software preview restart failed: %v", inst.Model.Name, err)
-				}
-			}
-		}
+		inst.Preview.OnHWFallback = m.makeHWFallback(inst, cameraID, src)
 	}
 	if err := inst.Preview.Start(); err != nil {
 		inst.Preview = nil
@@ -900,7 +883,184 @@ func (m *CameraManager) EnsurePreview(cameraID uint, src string) error {
 	}
 	inst.previewLastActive = time.Now()
 	logrus.Infof("camera %s preview stream started on demand (%s: %s)", inst.Model.Name, src, rtspURL)
+
+	// 硬件解码已启用但本摄像头尚未完成真实流自检 → 后台自检（首预览走软路径，零卡顿）
+	m.maybeProbeCameraHW(inst, cameraID, src, decodeArgs)
 	return nil
+}
+
+// resolvePreviewURL 预览源名（main/sub）→ RTSP URL
+func (m *CameraManager) resolvePreviewURL(inst *CameraInstance, src string) string {
+	var rtspURL string
+	if src == "sub" {
+		if rtspURL = inst.PreviewRTSPURL; rtspURL == "" {
+			rtspURL = inst.RecordRTSPURL
+		}
+	} else {
+		if rtspURL = inst.RecordRTSPURL; rtspURL == "" {
+			rtspURL = inst.PreviewRTSPURL
+		}
+	}
+	if rtspURL == "" {
+		rtspURL = BuildRTSPURL(inst.Model)
+	}
+	return rtspURL
+}
+
+// makeHWFallback 构造硬件路径失效时的回退回调（标记失败 + 软编解码无感重启）
+func (m *CameraManager) makeHWFallback(inst *CameraInstance, cameraID uint, src string) func() {
+	return func() {
+		inst.mu.Lock()
+		inst.hwFailed = true
+		running := inst.running
+		inst.mu.Unlock()
+		logrus.Warnf("camera %s hw codec preview failed, falling back to software codec (until camera restart or hw setting toggle)", inst.Model.Name)
+		// 立即用软编解码重试（仅当摄像头仍在运行，避免复活已停止的摄像头）
+		if running {
+			if err := m.EnsurePreview(cameraID, src); err != nil {
+				logrus.Warnf("camera %s software preview restart failed: %v", inst.Model.Name, err)
+			}
+		}
+	}
+}
+
+// hwProbeTimeout 真实流自检总超时（挂死进程被强杀）
+var hwProbeTimeout = 8 * time.Second
+
+// realHWDecodeProbe 真实自检执行器
+var realHWDecodeProbe = func(decodeArgs []string, rtspURL string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), hwProbeTimeout)
+	defer cancel()
+	args := append([]string{"-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp"}, decodeArgs...)
+	args = append(args, "-i", rtspURL, "-t", "3", "-sn", "-f", "null", "-")
+	return exec.CommandContext(ctx, "ffmpeg", args...).Run() == nil
+}
+
+// runHWDecodeProbe 可注入（测试用）：真实流硬件解码自检
+var runHWDecodeProbe = realHWDecodeProbe
+
+// maybeProbeCameraHW 预览已用软路径启动且硬件解码可用但未自检 → 后台发起真实流自检
+func (m *CameraManager) maybeProbeCameraHW(inst *CameraInstance, cameraID uint, src string, decodeArgs []string) {
+	if len(decodeArgs) > 0 {
+		return // 已经在用硬件路径
+	}
+	if !settings.GetBool(settings.KeyHWDecode, false) {
+		return
+	}
+	if !m.hwReportCached().Decode.Available {
+		return
+	}
+	inst.mu.Lock()
+	need := !inst.hwFailed && !inst.hwProbedOK && !inst.hwProbeInFlight && inst.running
+	inst.mu.Unlock()
+	if need {
+		go m.probeCameraHW(cameraID, src)
+	}
+}
+
+// probeCameraHW 对该摄像头的真实码流跑一次 3s 硬件解码自检（后台）：
+// 通过 → hwProbedOK + 当前预览无缝切硬件路径；失败/挂死 → hwFailed（始终软解码）。
+func (m *CameraManager) probeCameraHW(cameraID uint, src string) {
+	m.mu.RLock()
+	inst, ok := m.cameras[cameraID]
+	m.mu.RUnlock()
+	if !ok || inst == nil {
+		return
+	}
+
+	inst.mu.Lock()
+	if inst.hwFailed || inst.hwProbedOK || inst.hwProbeInFlight {
+		inst.mu.Unlock()
+		return
+	}
+	inst.hwProbeInFlight = true
+	codec := inst.Model.Codec
+	inst.mu.Unlock()
+	defer func() {
+		inst.mu.Lock()
+		inst.hwProbeInFlight = false
+		inst.mu.Unlock()
+	}()
+
+	report := m.hwReportCached()
+	decodeArgs := report.DecodeInputArgs(codec)
+	if len(decodeArgs) == 0 {
+		return // 能力已不可用（自检期间变化）
+	}
+	rtspURL := m.resolvePreviewURL(inst, src)
+	pass := runHWDecodeProbe(decodeArgs, rtspURL)
+
+	inst.mu.Lock()
+	if pass {
+		inst.hwProbedOK = true
+	} else {
+		inst.hwFailed = true
+	}
+	inst.mu.Unlock()
+
+	if pass {
+		logrus.Infof("camera %s hw decode real-stream self-check passed, enabling hw decode for preview", inst.Model.Name)
+		m.swapPreviewToHW(cameraID, src)
+	} else {
+		logrus.Warnf("camera %s hw decode real-stream self-check failed (hang or decode error), preview will stay on software codec (until camera restart or hw setting toggle)", inst.Model.Name)
+	}
+}
+
+// swapPreviewToHW 自检通过后把当前软路径预览重启为硬件路径（仅当预览正在运行且源一致）
+func (m *CameraManager) swapPreviewToHW(cameraID uint, src string) {
+	m.mu.RLock()
+	inst, ok := m.cameras[cameraID]
+	m.mu.RUnlock()
+	if !ok || inst == nil {
+		return
+	}
+	inst.previewMu.Lock()
+	defer inst.previewMu.Unlock()
+
+	inst.mu.Lock()
+	probedOK := inst.hwProbedOK
+	failed := inst.hwFailed
+	running := inst.running
+	inst.mu.Unlock()
+	if !probedOK || failed || !running {
+		return
+	}
+	p := inst.Preview
+	if p == nil || !p.IsRunning() || p.Src != src || p.UsingHW() {
+		return // 无同源的运行中预览或已是硬件路径：下次 EnsurePreview 自然走硬件参数
+	}
+
+	rtspURL := m.resolvePreviewURL(inst, src)
+	outDir := m.getCameraStoragePath(cameraID)
+	decodeArgs, encodeArgs := m.hwPreviewOpts(inst)
+
+	p.Stop()
+	select {
+	case <-p.DoneChan():
+	case <-time.After(3 * time.Second):
+	}
+
+	inst.Preview = ffmpeg.NewPreviewStream(cameraID, rtspURL, outDir)
+	inst.Preview.Src = src
+	inst.Preview.DecodeArgs = decodeArgs
+	inst.Preview.EncodeArgs = encodeArgs
+	inst.Preview.OnHWFallback = m.makeHWFallback(inst, cameraID, src)
+	if err := inst.Preview.Start(); err != nil {
+		logrus.Warnf("camera %s hw preview restart after self-check failed: %v; restarting software preview", inst.Model.Name, err)
+		inst.Preview = ffmpeg.NewPreviewStream(cameraID, rtspURL, outDir)
+		inst.Preview.Src = src
+		if err2 := inst.Preview.Start(); err2 != nil {
+			inst.Preview = nil
+			inst.mu.Lock()
+			inst.hwFailed = true
+			inst.hwProbedOK = false
+			inst.mu.Unlock()
+			return
+		}
+		return
+	}
+	inst.previewLastActive = time.Now()
+	logrus.Infof("camera %s preview switched to hw codec after real-stream self-check (%s: %s)", inst.Model.Name, src, rtspURL)
 }
 
 func (m *CameraManager) NormalizePreviewSrc(src string) string {
@@ -1208,7 +1368,9 @@ func (m *CameraManager) StartCamera(id uint) error {
 		inst.StopChan = make(chan struct{})
 		inst.loopDone = make(chan struct{})
 		inst.ReconnectCnt = 0
-		inst.hwFailed = false // 重启摄像头：重新尝试硬件编解码
+		inst.hwFailed = false   // 重启摄像头：重新尝试硬件编解码
+		inst.hwProbedOK = false // 重新做真实流自检
+		inst.hwProbeInFlight = false
 	} else {
 		inst = &CameraInstance{
 			Model:    cloneCamera(cam),

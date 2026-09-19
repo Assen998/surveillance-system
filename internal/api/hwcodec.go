@@ -18,12 +18,18 @@ func (s *Server) hwCodecCheck(l string) CheckItem {
 
 	report := hwcodec.Detect()
 
-	featDesc := func(f hwcodec.Feature) string {
+	// “可用”列表只显示设备实际可用的方向（如 Amlogic 只有解码单元）；
+	// “已编译”列表显示该功能编译支持的全部方向
+	featDesc := func(f hwcodec.Feature, readyOnly bool) string {
 		desc := f.Name
-		if len(f.Encode) > 0 {
+		encOK, decOK := true, true
+		if readyOnly {
+			encOK, decOK = f.EncodeOK, f.DecodeOK
+		}
+		if encOK && len(f.Encode) > 0 {
 			desc += " " + TEnv(l, "env.hw.encode") + " " + strings.Join(f.Encode, "/")
 		}
-		if len(f.Decode) > 0 {
+		if decOK && len(f.Decode) > 0 {
 			desc += " " + TEnv(l, "env.hw.decode") + " " + strings.Join(f.Decode, "/")
 		}
 		return desc
@@ -32,9 +38,9 @@ func (s *Server) hwCodecCheck(l string) CheckItem {
 	ready, compiled := []string{}, []string{}
 	for _, f := range report.Features {
 		if f.DeviceOK() {
-			ready = append(ready, featDesc(f))
+			ready = append(ready, featDesc(f, true))
 		} else {
-			compiled = append(compiled, featDesc(f))
+			compiled = append(compiled, featDesc(f, false))
 		}
 	}
 	// ready 按能力优先级展示
@@ -67,7 +73,7 @@ func (s *Server) hwCodecCheck(l string) CheckItem {
 			if c.DeviceOK() {
 				continue
 			}
-			desc := featDesc(c)
+			desc := featDesc(c, false)
 			if report.Decode.Reason == hwcodec.ReasonVerifyFailed && c.Name == report.Decode.Feature {
 				continue
 			}

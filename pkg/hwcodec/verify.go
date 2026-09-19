@@ -28,12 +28,30 @@ import (
 )
 
 const (
-	probeTimeout  = 10 * time.Second
-	probeCodec    = "h264"
-	probeSize     = "640x480"
-	probeRate     = 10
-	probeDuration = 2
+	probeTimeout = 10 * time.Second
+	probeCodec   = "h264"
+	// 自检源贴近摄像头真实码流：1080p + high profile + 周期性重传 SPS/PPS
+	// （简单合成流可解码 ≠ 摄像头流可解码：Amlogic 在 .231 实测对真实流挂死）
+	probeSize     = "1920x1080"
+	probeRate     = 15
+	probeDuration = 4
 )
+
+// probeInputArgs 合成源输入参数（分辨率/帧率贴近摄像头主流）
+func probeInputArgs() []string {
+	return []string{
+		"-f", "lavfi",
+		"-i", fmt.Sprintf("testsrc=duration=%d:size=%s:rate=%d", probeDuration, probeSize, probeRate),
+	}
+}
+
+// probeEncodeSourceArgs 合成源编码参数（贴近摄像头码流：high profile + 重传 SPS/PPS）
+func probeEncodeSourceArgs() []string {
+	return []string{
+		"-c:v", "libx264", "-profile:v", "high", "-preset", "veryfast",
+		"-g", "50", "-x264-params", "repeat-headers=1", "-pix_fmt", "yuv420p",
+	}
+}
 
 var (
 	verifyMu     sync.Mutex
@@ -86,11 +104,7 @@ func makeProbeSource() (string, error) {
 	path := probeSourcePath()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	err := runProbe(ctx, "ffmpeg",
-		"-f", "lavfi",
-		"-i", fmt.Sprintf("testsrc=duration=%d:size=%s:rate=%d", probeDuration, probeSize, probeRate),
-		"-c:v", "libx264", "-pix_fmt", "yuv420p",
-		"-y", path)
+	err := runProbe(ctx, "ffmpeg", append(append(probeInputArgs(), probeEncodeSourceArgs()...), "-y", path)...)
 	if err != nil {
 		return "", err
 	}
@@ -125,12 +139,8 @@ func probeEncodeArgs(feature string) (args []string, ok bool) {
 	if suffix == "" {
 		return nil, false
 	}
-	return []string{
-		"-f", "lavfi",
-		"-i", fmt.Sprintf("testsrc=duration=%d:size=%s:rate=%d", probeDuration, probeSize, probeRate),
-		"-c:v", probeCodec + "_" + suffix, "-pix_fmt", "yuv420p",
-		"-f", "null", "-",
-	}, true
+	return append(probeInputArgs(),
+		"-c:v", probeCodec+"_"+suffix, "-pix_fmt", "yuv420p", "-f", "null", "-"), true
 }
 
 // probeOne 对单个方向/功能执行自检并写入缓存。

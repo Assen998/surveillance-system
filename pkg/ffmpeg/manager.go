@@ -728,9 +728,10 @@ type PreviewStream struct {
 	fallbackFired atomic.Bool
 }
 
-// 硬件路径看门狗：启动后 15s 仍无 HLS 播放列表输出 → 判定硬件路径挂死
-// （Amlogic 等 SoC 上 V4L2 M2M 设备可能打开后无输出，ffmpeg 进程不退出）
-var hwWatchdogTimeout = 15 * time.Second
+// 硬件路径看门狗：启动后 10s 仍无 HLS 播放列表输出 → 判定硬件路径挂死
+// （Amlogic 等 SoC 上 V4L2 M2M 设备可能打开后无输出，ffmpeg 进程不退出；
+// 正常硬件路径约 4-6s 即产出首个播放列表）
+var hwWatchdogTimeout = 10 * time.Second
 
 // fireFallback 确保回退回调最多触发一次（进程退出监控与看门狗共用）
 func (p *PreviewStream) fireFallback(reason string) {
